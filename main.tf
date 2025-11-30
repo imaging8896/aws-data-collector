@@ -90,6 +90,45 @@ data "archive_file" "lambda_zip" {
   type        = "zip"
   source_dir  = "${path.module}/lambda"
   output_path = "${path.module}/lambda_function.zip"
+  excludes    = ["requirements.txt", "__pycache__"]
+}
+
+# Create Lambda Layer with dependencies using Docker for Lambda-compatible build
+resource "terraform_data" "install_dependencies" {
+  triggers_replace = {
+    requirements = filemd5("${path.module}/lambda/requirements.txt")
+  }
+
+  provisioner "local-exec" {
+    # If encounter docker pull denied do following commands to login to public ECR and retry
+    # docker logout public.ecr.aws
+    # aws ecr-public get-login-password | docker login --username AWS --password-stdin public.ecr.aws
+    command = <<EOT
+      mkdir -p ${path.module}/layer/python
+      docker run --rm --entrypoint "" \
+        -v "$(pwd)/${path.module}/lambda/requirements.txt:/tmp/requirements.txt" \
+        -v "$(pwd)/${path.module}/layer/python:/var/task" \
+        public.ecr.aws/lambda/python:${replace(var.lambda_runtime, "python", "")} \
+        pip install -r /tmp/requirements.txt -t /var/task --upgrade
+    EOT
+  }
+}
+
+data "archive_file" "lambda_layer_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/layer"
+  output_path = "${path.module}/lambda_layer.zip"
+
+  depends_on = [terraform_data.install_dependencies]
+}
+
+resource "aws_lambda_layer_version" "dependencies_layer" {
+  filename            = data.archive_file.lambda_layer_zip.output_path
+  layer_name          = "${var.environment}-${var.project_name}-dependencies"
+  compatible_runtimes = [var.lambda_runtime]
+  source_code_hash    = data.archive_file.lambda_layer_zip.output_base64sha256
+
+  depends_on = [data.archive_file.lambda_layer_zip]
 }
 
 # Lambda Function
@@ -102,6 +141,7 @@ resource "aws_lambda_function" "data_collector" {
   runtime         = var.lambda_runtime
   memory_size     = var.lambda_memory_size
   timeout         = var.lambda_timeout
+  layers = [aws_lambda_layer_version.dependencies_layer.arn]
 
   environment {
     variables = {

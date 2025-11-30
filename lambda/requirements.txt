@@ -1,0 +1,2 @@
+boto3
+py-open-news==0.0.10
