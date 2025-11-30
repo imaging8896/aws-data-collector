@@ -1,0 +1,12 @@
+# Example Terraform variables file
+# Copy this file to terraform.tfvars and update with your values
+# DO NOT commit terraform.tfvars to version control
+
+environment    = "dev"
+project_name   = "aws-data-collector"
+lambda_runtime = "python3.13"
+
+# Cost optimization settings
+lambda_memory_size     = 128  # Minimum memory
+lambda_timeout         = 30   # Reasonable timeout
+dynamodb_billing_mode  = "PAY_PER_REQUEST"  # Pay per request, no minimum costs

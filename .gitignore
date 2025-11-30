@@ -35,3 +35,10 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+
+# Environment variables
+.env
+.env.local
+
+# Lambda deployment package
+lambda_function.zip
