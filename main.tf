@@ -177,3 +177,68 @@ resource "aws_cloudwatch_log_group" "lambda_logs" {
     ManagedBy   = "Terraform"
   }
 }
+
+# EventBridge Rule to trigger Lambda hourly
+resource "aws_cloudwatch_event_rule" "hourly_finance_trigger" {
+  name                = "${var.environment}-${var.project_name}-hourly-finance"
+  description         = "Trigger Lambda hourly for finance news"
+  schedule_expression = "rate(1 hour)"
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
+
+resource "aws_cloudwatch_event_rule" "hourly_business_trigger" {
+  name                = "${var.environment}-${var.project_name}-hourly-business"
+  description         = "Trigger Lambda hourly for business news"
+  schedule_expression = "rate(1 hour)"
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
+
+# EventBridge Target for finance category
+resource "aws_cloudwatch_event_target" "lambda_finance_target" {
+  rule      = aws_cloudwatch_event_rule.hourly_finance_trigger.name
+  target_id = "LambdaFinanceTarget"
+  arn       = aws_lambda_function.data_collector.arn
+
+  input = jsonencode({
+    category_id = "CAAqJQgKIh9DQkFTRVFvSUwyMHZNREpmTjNRU0JYcG9MVlJYS0FBUAE"
+  })
+}
+
+# EventBridge Target for business category
+resource "aws_cloudwatch_event_target" "lambda_business_target" {
+  rule      = aws_cloudwatch_event_rule.hourly_business_trigger.name
+  target_id = "LambdaBusinessTarget"
+  arn       = aws_lambda_function.data_collector.arn
+
+  input = jsonencode({
+    category_id = "CAAqKggKIiRDQkFTRlFvSUwyMHZNRGx6TVdZU0JYcG9MVlJYR2dKVVZ5Z0FQAQ"
+  })
+}
+
+# Lambda permission for EventBridge to invoke the function (finance)
+resource "aws_lambda_permission" "allow_eventbridge_finance" {
+  statement_id  = "AllowExecutionFromEventBridgeFinance"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.data_collector.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.hourly_finance_trigger.arn
+}
+
+# Lambda permission for EventBridge to invoke the function (business)
+resource "aws_lambda_permission" "allow_eventbridge_business" {
+  statement_id  = "AllowExecutionFromEventBridgeBusiness"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.data_collector.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.hourly_business_trigger.arn
+}
