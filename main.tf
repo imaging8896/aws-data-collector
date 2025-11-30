@@ -1,13 +1,19 @@
-# DynamoDB Table
-resource "aws_dynamodb_table" "data_table" {
-  name         = "${var.environment}-${var.project_name}-data"
+# DynamoDB Table for News URLs
+resource "aws_dynamodb_table" "news_urls_table" {
+  name         = "${var.environment}-${var.project_name}-news-urls"
   billing_mode = var.dynamodb_billing_mode
-  hash_key     = "id"
-  range_key    = "timestamp"
+  hash_key     = "url"
 
   attribute {
-    name = "id"
+    name = "url"
     type = "S"
+  }
+
+  # Global Secondary Index for querying by timestamp
+  global_secondary_index {
+    name            = "TimestampIndex"
+    hash_key        = "timestamp"
+    projection_type = "ALL"
   }
 
   attribute {
@@ -73,7 +79,10 @@ resource "aws_iam_role_policy" "lambda_dynamodb_policy" {
           "dynamodb:Query",
           "dynamodb:Scan"
         ]
-        Resource = aws_dynamodb_table.data_table.arn
+        Resource = [
+          aws_dynamodb_table.news_urls_table.arn,
+          "${aws_dynamodb_table.news_urls_table.arn}/index/*"
+        ]
       }
     ]
   })
@@ -88,7 +97,7 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
 # Lambda function source code archive
 data "archive_file" "lambda_zip" {
   type        = "zip"
-  source_dir  = "${path.module}/lambda"
+  source_dir  = "${path.module}/lambda/get_news_urls"
   output_path = "${path.module}/lambda_function.zip"
   excludes    = ["requirements.txt", "__pycache__"]
 }
@@ -96,7 +105,7 @@ data "archive_file" "lambda_zip" {
 # Create Lambda Layer with dependencies using Docker for Lambda-compatible build
 resource "terraform_data" "install_dependencies" {
   triggers_replace = {
-    requirements = filemd5("${path.module}/lambda/requirements.txt")
+    requirements = filemd5("${path.module}/lambda/get_news_urls/requirements.txt")
   }
 
   provisioner "local-exec" {
@@ -106,7 +115,7 @@ resource "terraform_data" "install_dependencies" {
     command = <<EOT
       mkdir -p ${path.module}/layer/python
       docker run --rm --entrypoint "" \
-        -v "$(pwd)/${path.module}/lambda/requirements.txt:/tmp/requirements.txt" \
+        -v "$(pwd)/${path.module}/lambda/get_news_urls/requirements.txt:/tmp/requirements.txt" \
         -v "$(pwd)/${path.module}/layer/python:/var/task" \
         public.ecr.aws/lambda/python:${replace(var.lambda_runtime, "python", "")} \
         pip install -r /tmp/requirements.txt -t /var/task --upgrade
@@ -136,7 +145,7 @@ resource "aws_lambda_function" "data_collector" {
   filename         = data.archive_file.lambda_zip.output_path
   function_name    = "${var.environment}-${var.project_name}-collector"
   role            = aws_iam_role.lambda_role.arn
-  handler         = "index.handler"
+  handler         = "main.handler"
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
   runtime         = var.lambda_runtime
   memory_size     = var.lambda_memory_size
@@ -145,7 +154,7 @@ resource "aws_lambda_function" "data_collector" {
 
   environment {
     variables = {
-      DYNAMODB_TABLE_NAME = aws_dynamodb_table.data_table.name
+      DYNAMODB_TABLE_NAME = aws_dynamodb_table.news_urls_table.name
       ENVIRONMENT         = var.environment
     }
   }

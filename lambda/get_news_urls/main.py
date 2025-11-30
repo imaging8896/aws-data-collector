@@ -31,11 +31,10 @@ def handler(event, context):
 
         if news_articles := google.get_news(category, category_id, location, section_id):
             stored_count = 0
-            stored_ids = []
+            stored_urls = []
             for article in news_articles:
-                article_id = article.url
                 item = {
-                    'id': article_id,
+                    'url': article.url,  # URL as primary key
                     'title': article.title,
                     'story_url': article.story_url if article.story_url else None,
                     'publish_time': int(article.publish_time.timestamp()) if article.publish_time else None,
@@ -43,16 +42,26 @@ def handler(event, context):
                 }
                 
                 # Put item in DynamoDB
+                # Check if URL already exists in DynamoDB
+                try:
+                    response = table.get_item(Key={'url': article.url})
+                    if 'Item' in response:
+                        # URL already exists, skip it
+                        continue
+                except Exception as get_error:
+                    print(f"Error checking item: {str(get_error)}")
+                
+                # Put item only if it doesn't exist
                 table.put_item(Item=item)
                 stored_count += 1
-                stored_ids.append(article_id)
+                stored_urls.append(article.url)
             
             return {
                 'statusCode': 200,
                 'body': json.dumps({
                     'message': 'News URLs collected successfully',
                     'count': stored_count,
-                    'article_ids': stored_ids
+                    'urls': stored_urls
                 })
             }
         else:
