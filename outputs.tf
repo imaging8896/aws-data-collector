@@ -1,11 +1,21 @@
 output "lambda_function_name" {
-  description = "Name of the Lambda function"
+  description = "Name of the Lambda function for getting news URLs"
   value       = aws_lambda_function.data_collector.function_name
 }
 
 output "lambda_function_arn" {
-  description = "ARN of the Lambda function"
+  description = "ARN of the Lambda function for getting news URLs"
   value       = aws_lambda_function.data_collector.arn
+}
+
+output "lambda_content_function_name" {
+  description = "Name of the Lambda function for getting news content"
+  value       = aws_lambda_function.content_collector.function_name
+}
+
+output "lambda_content_function_arn" {
+  description = "ARN of the Lambda function for getting news content"
+  value       = aws_lambda_function.content_collector.arn
 }
 
 output "dynamodb_table_name" {

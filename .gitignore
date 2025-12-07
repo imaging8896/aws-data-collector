@@ -44,3 +44,6 @@ terraform.rc
 lambda_function.zip
 lambda_layer.zip
 layer/
+lambda_content_function.zip
+lambda_content_layer.zip
+layer_content/

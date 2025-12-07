@@ -1,0 +1,39 @@
+# DynamoDB Table for News URLs
+resource "aws_dynamodb_table" "news_urls_table" {
+  name         = "${var.environment}-${var.project_name}-news-urls"
+  billing_mode = var.dynamodb_billing_mode
+  hash_key     = "url"
+
+  attribute {
+    name = "url"
+    type = "S"
+  }
+
+  # Global Secondary Index for querying by timestamp
+  global_secondary_index {
+    name            = "TimestampIndex"
+    hash_key        = "timestamp"
+    projection_type = "ALL"
+  }
+
+  attribute {
+    name = "timestamp"
+    type = "N"
+  }
+
+  # Point-in-time recovery for data protection (minimal cost)
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  # Server-side encryption
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
