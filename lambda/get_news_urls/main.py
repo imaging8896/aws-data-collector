@@ -56,6 +56,7 @@ def handler(event, context):
                 stored_count += 1
                 stored_urls.append(article.url)
             
+            print(f"Stored {stored_count} new URLs: {stored_urls}")
             return {
                 'statusCode': 200,
                 'body': json.dumps({
@@ -65,6 +66,7 @@ def handler(event, context):
                 })
             }
         else:
+            print("No news articles found")
             return {
                 'statusCode': 404,
                 'body': json.dumps({

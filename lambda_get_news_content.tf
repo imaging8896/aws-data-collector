@@ -17,30 +17,23 @@ resource "terraform_data" "install_content_dependencies" {
   provisioner "local-exec" {
     command = <<EOT
       mkdir -p ${path.module}/layer_content/python
-      docker run --rm --platform linux/amd64 --entrypoint "" \
+      docker run --rm --platform linux/arm64 --entrypoint "" \
         -v "$(pwd)/${path.module}/lambda/get_news_content/requirements.txt:/tmp/requirements.txt" \
         -v "$(pwd)/${path.module}/layer_content/python:/var/task" \
         public.ecr.aws/lambda/python:${replace(var.lambda_runtime, "python", "")} \
         pip install -r /tmp/requirements.txt -t /var/task --upgrade
+      cd ${path.module}/layer_content && zip -r ../lambda_content_layer.zip python
     EOT
   }
 }
 
-data "archive_file" "lambda_content_layer_zip" {
-  type        = "zip"
-  source_dir  = "${path.module}/layer_content"
-  output_path = "${path.module}/lambda_content_layer.zip"
-
-  depends_on = [terraform_data.install_content_dependencies]
-}
-
 resource "aws_lambda_layer_version" "content_dependencies_layer" {
-  filename            = data.archive_file.lambda_content_layer_zip.output_path
+  filename            = "${path.module}/lambda_content_layer.zip"
   layer_name          = "${var.environment}-${var.project_name}-content-dependencies"
   compatible_runtimes = [var.lambda_runtime]
-  source_code_hash    = data.archive_file.lambda_content_layer_zip.output_base64sha256
+  source_code_hash    = terraform_data.install_content_dependencies.id
 
-  depends_on = [data.archive_file.lambda_content_layer_zip]
+  depends_on = [terraform_data.install_content_dependencies]
 }
 
 # Lambda Function for get_news_content

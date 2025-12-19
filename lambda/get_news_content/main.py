@@ -40,6 +40,8 @@ def handler(event, context):
             table.delete_item(Key={'url': url})
             data['url'] = actual_news_url
             table.put_item(Item=data)
+
+        print(f"News content updated for URL: {actual_news_url}")
             
         return {
             'statusCode': 200,
