@@ -33,3 +33,9 @@ variable "dynamodb_billing_mode" {
   type        = string
   default     = "PAY_PER_REQUEST"
 }
+
+variable "openai_api_key" {
+  description = "OpenAI API key for news analysis"
+  type        = string
+  sensitive   = true
+}

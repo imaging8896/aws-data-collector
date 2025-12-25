@@ -75,3 +75,24 @@ resource "aws_iam_role_policy" "lambda_invoke_policy" {
     ]
   })
 }
+
+# IAM Policy for Lambda to read Secrets Manager
+resource "aws_iam_role_policy" "lambda_secrets_policy" {
+  name = "${var.environment}-${var.project_name}-lambda-secrets-policy"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [
+          "arn:aws:secretsmanager:*:*:secret:${var.environment}/${var.project_name}/*"
+        ]
+      }
+    ]
+  })
+}

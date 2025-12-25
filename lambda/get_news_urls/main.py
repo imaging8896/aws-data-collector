@@ -16,6 +16,13 @@ content_collector_function = os.environ['CONTENT_COLLECTOR_LAMBDA']
 category_tw_topic_finance_id = "CAAqJQgKIh9DQkFTRVFvSUwyMHZNREpmTjNRU0JYcG9MVlJYS0FBUAE"
 category_tw_topic_business_id = "CAAqKggKIiRDQkFTRlFvSUwyMHZNRGx6TVdZU0JYcG9MVlJYR2dKVVZ5Z0FQAQ"
 
+VALID_SOURCE_DOMAINS = {
+    # "www.upmedia.mg", # Verified can't get news content e.g. https://www.upmedia.mg/tw/lifestyle/food/247791
+    "www.moneydj.com", 
+    "www.ctee.com.tw",
+}
+
+
 def handler(event, context):
     """
     Lambda function handler for collecting news URLs
@@ -34,6 +41,12 @@ def handler(event, context):
         section_id = event.get('section_id', None)
 
         if news_articles := google.get_news(category, category_id, location, section_id):
+            news_articles = [
+                x for x in news_articles 
+                if _get_domain(x.url) in VALID_SOURCE_DOMAINS 
+                and (_get_domain(x.url) != "www.moneydj.com" or _get_first_path(x.url).lower() == "kmdj") # There is 'funddj' 基金網，我們不取用
+            ]
+                
             stored_count = 0
             stored_urls = []
             for article in news_articles:
@@ -98,3 +111,11 @@ def handler(event, context):
                 'error': str(e)
             })
         }
+
+
+def _get_domain(url: str) -> str:
+    return url.split("/")[2]
+
+
+def _get_first_path(url: str) -> str:
+    return url.split("/")[3]

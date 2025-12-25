@@ -48,3 +48,9 @@ lambda_content_function.zip
 lambda_content_layer.zip
 layer_content/
 lambda_dispatcher_function.zip
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
