@@ -19,6 +19,7 @@ resource "terraform_data" "install_dependencies" {
     # docker logout public.ecr.aws
     # aws ecr-public get-login-password | docker login --username AWS --password-stdin public.ecr.aws
     command = <<EOT
+      rm -rf ${path.module}/layer || true
       mkdir -p ${path.module}/layer/python
       docker run --rm --platform linux/arm64 --entrypoint "" \
         -v "$(pwd)/${path.module}/lambda/get_news_urls/requirements.txt:/tmp/requirements.txt" \
@@ -31,10 +32,11 @@ resource "terraform_data" "install_dependencies" {
 }
 
 resource "aws_lambda_layer_version" "dependencies_layer" {
-  filename            = "${path.module}/lambda_layer.zip"
-  layer_name          = "${var.environment}-${var.project_name}-dependencies"
-  compatible_runtimes = [var.lambda_runtime]
-  source_code_hash    = terraform_data.install_dependencies.id
+  filename               = "${path.module}/lambda_layer.zip"
+  layer_name             = "${var.environment}-${var.project_name}-dependencies"
+  compatible_runtimes    = [var.lambda_runtime]
+  compatible_architectures = ["arm64"]
+  source_code_hash       = terraform_data.install_dependencies.id
 
   depends_on = [terraform_data.install_dependencies]
 }
@@ -49,12 +51,14 @@ resource "aws_lambda_function" "data_collector" {
   runtime         = var.lambda_runtime
   memory_size     = var.lambda_memory_size
   timeout         = var.lambda_timeout
+  architectures    = ["arm64"]
   layers           = [aws_lambda_layer_version.dependencies_layer.arn]
 
   environment {
     variables = {
-      DYNAMODB_TABLE_NAME = aws_dynamodb_table.news_urls_table.name
-      ENVIRONMENT         = var.environment
+      DYNAMODB_TABLE_NAME       = aws_dynamodb_table.news_urls_table.name
+      ENVIRONMENT               = var.environment
+      CONTENT_COLLECTOR_LAMBDA  = aws_lambda_function.content_collector.function_name
     }
   }
 

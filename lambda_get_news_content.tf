@@ -16,6 +16,7 @@ resource "terraform_data" "install_content_dependencies" {
 
   provisioner "local-exec" {
     command = <<EOT
+      rm -rf ${path.module}/layer_content || true
       mkdir -p ${path.module}/layer_content/python
       docker run --rm --platform linux/arm64 --entrypoint "" \
         -v "$(pwd)/${path.module}/lambda/get_news_content/requirements.txt:/tmp/requirements.txt" \
@@ -28,10 +29,11 @@ resource "terraform_data" "install_content_dependencies" {
 }
 
 resource "aws_lambda_layer_version" "content_dependencies_layer" {
-  filename            = "${path.module}/lambda_content_layer.zip"
-  layer_name          = "${var.environment}-${var.project_name}-content-dependencies"
-  compatible_runtimes = [var.lambda_runtime]
-  source_code_hash    = terraform_data.install_content_dependencies.id
+  filename                 = "${path.module}/lambda_content_layer.zip"
+  layer_name               = "${var.environment}-${var.project_name}-content-dependencies"
+  compatible_runtimes      = [var.lambda_runtime]
+  compatible_architectures = ["arm64"]
+  source_code_hash         = terraform_data.install_content_dependencies.id
 
   depends_on = [terraform_data.install_content_dependencies]
 }
@@ -46,6 +48,7 @@ resource "aws_lambda_function" "content_collector" {
   runtime         = var.lambda_runtime
   memory_size      = var.lambda_memory_size
   timeout          = var.lambda_timeout
+  architectures    = ["arm64"]
   layers           = [aws_lambda_layer_version.content_dependencies_layer.arn]
 
   environment {

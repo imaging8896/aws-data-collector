@@ -29,6 +29,9 @@ def handler(event, context):
             raise ValueError(f"URL not found in DynamoDB: {url}")
         data = response['Item']
 
+        print(f"Fetching news content for URL: {url}")
+        return
+
         news_content, actual_news_url = get_news_content(url, mobile=True, desktop=True)
 
         data['content'] = news_content

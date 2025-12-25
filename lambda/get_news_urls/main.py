@@ -9,6 +9,10 @@ dynamodb = boto3.resource('dynamodb')  # type: ignore
 table_name = os.environ['DYNAMODB_TABLE_NAME']
 table = dynamodb.Table(table_name)  # type: ignore
 
+# Initialize Lambda client for invoking content collector
+lambda_client = boto3.client('lambda')
+content_collector_function = os.environ['CONTENT_COLLECTOR_LAMBDA']
+
 category_tw_topic_finance_id = "CAAqJQgKIh9DQkFTRVFvSUwyMHZNREpmTjNRU0JYcG9MVlJYS0FBUAE"
 category_tw_topic_business_id = "CAAqKggKIiRDQkFTRlFvSUwyMHZNRGx6TVdZU0JYcG9MVlJYR2dKVVZ5Z0FQAQ"
 
@@ -55,6 +59,17 @@ def handler(event, context):
                 table.put_item(Item=item)
                 stored_count += 1
                 stored_urls.append(article.url)
+                
+                # Trigger content collector Lambda for this URL
+                try:
+                    lambda_client.invoke(
+                        FunctionName=content_collector_function,
+                        InvocationType='Event',  # Async invocation
+                        Payload=json.dumps({'url': article.url})
+                    )
+                    print(f"Triggered content collection for: {article.url}")
+                except Exception as invoke_error:
+                    print(f"Error invoking content collector for {article.url}: {str(invoke_error)}")
             
             print(f"Stored {stored_count} new URLs: {stored_urls}")
             return {

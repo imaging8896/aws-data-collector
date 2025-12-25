@@ -1,3 +1,4 @@
 boto3
 cloudscraper
 curl_cffi
+openai
