@@ -13,7 +13,9 @@ This project uses cost-optimized AWS services:
 
 - [Terraform](https://www.terraform.io/downloads.html) >= 1.0
 - AWS Account with appropriate permissions
-- AWS credentials configured via environment variables
+- AWS CLI configured with credentials
+- Docker (for building Lambda layers with ARM64 architecture, in your case maybe x86-64)
+- OpenAI API key with Batch API access
 
 ## Setup
 
@@ -39,15 +41,19 @@ export $(cat .env | xargs)
 
 # Or use direnv (recommended)
 direnv allow
-```
-
 ### 2. Configure Terraform Variables
 
-Create `terraform.tfvars` from the example:
+Create `terraform.tfvars`:
 
 ```bash
-cp terraform.tfvars.example terraform.tfvars
+cat > terraform.tfvars <<EOF
+environment     = "dev"
+project_name    = "aws-data-collector"
+openai_api_key  = "sk-your-openai-api-key-here"
+EOF
 ```
+
+**Important**: `terraform.tfvars` contains sensitive data and is excluded from version control.
 
 Edit `terraform.tfvars` with your desired configuration.
 
@@ -60,30 +66,76 @@ terraform init
 # Preview changes
 terraform plan
 
-# Apply changes
+# Deploy
 terraform apply
-```
 
 ## Usage
 
-After deployment, you can invoke the Lambda function:
+### Manual Invocation
+
+Trigger news collection manually:
 
 ```bash
+# Trigger dispatcher
+aws lambda invoke \
+  --function-name dev-aws-data-collector-dispatcher \
+  response.json
+
+# Trigger URL collector directly
 aws lambda invoke \
   --function-name dev-aws-data-collector-collector \
   --cli-binary-format raw-in-base64-out \
-  --payload '{"id":"test-1","data":{"message":"Hello World"}}' \
+  --payload '{"category_id":"CAAqJQgKIh9DQkFTRVFvSUwyMHZNREpmTjNRU0JYcG9MVlJYS0FBUAE"}' \
   response.json
-
-cat response.json
 ```
+
+### Query Results
+
+```bash
+# Scan DynamoDB for collected news
+aws dynamodb scan \
+  --table-name dev-aws-data-collector-news-urls \
+  --max-items 10
+
+# Check batch processing status
+aws dynamodb scan \
+  --table-name dev-aws-data-collector-batch-requests
+```
+
+## AI Analysis Output
+
+Each news article is analyzed for:
+
+1. **Industries**: Related industry domains with impact assessment
+   - `domain`: Industry name (e.g., "半導體", "電動車", "金融")
+   - `impact_score`: Rating from -5 (very negative) to +5 (very positive)
+   - `reason`: Explanation of the impact
+
+2. **Genre**: News type (e.g., "快訊", "深度報導", "財報", "分析評論")
 
 ## Cost Optimization Features
 
-- **Lambda**: 128MB memory (minimum), charged per 100ms execution
-- **DynamoDB**: Pay-per-request billing (no minimum costs when idle)
+- **Lambda ARM64**: Graviton processors provide 20% better price-performance
+- **OpenAI Batch API**: 50% cheaper than synchronous API calls
+- **DynamoDB On-Demand**: Pay-per-request billing (no minimum costs when idle)
+- **EventBridge**: First 14 million invocations/month free
 - **CloudWatch Logs**: 7-day retention to minimize storage costs
 - **No always-on infrastructure**: All services scale to zero when not in use
+
+### Estimated Monthly Cost
+
+Based on collecting 10 news articles/day:
+
+| Service | Monthly Cost |
+|---------|--------------|
+| Lambda (ARM64) | ~$0.02 |
+| DynamoDB | ~$0.05 |
+| Secrets Manager | $0.40 |
+| CloudWatch Logs | ~$0.03 |
+| OpenAI Batch API | ~$0.06 |
+| **Total** | **~$0.56/month** |
+
+**Cost Optimization Tip**: Replace Secrets Manager with SSM Parameter Store to save $0.40/month (reduce to $0.16/month)
 
 ## Development
 
@@ -91,14 +143,50 @@ cat response.json
 
 ```
 .
-├── providers.tf              # Terraform provider configuration
-├── variables.tf              # Input variables
-├── main.tf                   # Main infrastructure resources
-├── outputs.tf                # Output values
-├── terraform.tfvars.example  # Example variables (safe to commit)
-├── lambda/                   # Lambda function source code
-│   └── index.py             # Lambda handler
-└── .env.example             # Example environment variables
+├── providers.tf                      # AWS provider configuration
+├── variables.tf                      # Input variables
+├── main.tf                           # Secrets Manager resources
+├── dynamodb.tf                       # DynamoDB tables
+├── iam.tf                            # IAM roles and policies
+├── lambda_dispatcher.tf              # Dispatcher Lambda + EventBridge
+├── lambda_get_news_urls.tf          # URL collector Lambda
+├── lambda_get_news_content.tf       # Content collector Lambda
+├── lambda_process_batch_results.tf  # Batch processor Lambda + EventBridge
+├── outputs.tf                        # Output values
+├── lambda/
+│   ├── dispatcher/                  # Hourly trigger handler
+│   ├── get_news_urls/              # Google News RSS collector
+│   ├── get_news_content/           # Article content extractor + batch creator
+│   └── process_batch_results/      # OpenAI batch result processor
+└── .github/
+    └── copilot-instructions.md     # AI agent development guidelines
+```
+
+### Lambda Layers
+
+Each Lambda function uses Docker to build ARM64-compatible layers:
+- Dependencies are installed using `public.ecr.aws/lambda/python:3.13`
+- Built with `--platform linux/arm64` for Graviton processors
+- Automatically rebuilt when `requirements.txt` changes
+
+### Data Flow
+
+```
+EventBridge (hourly)
+    ↓
+Dispatcher Lambda
+    ↓
+Get News URLs Lambda → DynamoDB (news-urls)
+    ↓ (for each new URL)
+Get News Content Lambda → DynamoDB (batch-requests)
+    ↓
+OpenAI Batch API (24h processing)
+    ↓
+DynamoDB (batch-request)
+    ↓
+EventBridge (every 5 min) → Process Batch Results Lambda
+    ↓
+DynamoDB (check batch-request)
 ```
 
 ### Destroy Infrastructure
@@ -111,9 +199,37 @@ terraform destroy
 
 ## Security
 
-- Never commit `.tfvars`, `.env`, or `.terraform/` to version control
-- Use AWS Secrets Manager or Parameter Store for sensitive data in production
-- Follow least-privilege IAM principles
+- Never commit `terraform.tfvars`, `.env`, or `.terraform/` to version control
+- OpenAI API key stored in AWS Secrets Manager with encryption
+- DynamoDB tables use server-side encryption
+- Point-in-time recovery enabled for data protection
+- IAM roles follow least-privilege principles
+- Lambda functions use separate IAM roles per function type
+
+## Monitoring
+
+- CloudWatch Logs available for all Lambda functions (7-day retention)
+- DynamoDB Point-in-Time Recovery enabled
+- Batch processing tracked in `batch-requests` table
+
+## Troubleshooting
+
+### Docker Build Issues
+
+If you encounter `docker pull denied`:
+
+```bash
+docker logout public.ecr.aws
+aws ecr-public get-login-password | docker login --username AWS --password-stdin public.ecr.aws
+```
+
+### Check Lambda Logs
+
+```bash
+aws logs tail /aws/lambda/dev-aws-data-collector-collector --follow
+aws logs tail /aws/lambda/dev-aws-data-collector-content-collector --follow
+aws logs tail /aws/lambda/dev-aws-data-collector-batch-processor --follow
+```
 
 ## License
 
