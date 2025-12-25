@@ -1,6 +1,7 @@
 import json
 import os
 import boto3
+from datetime import datetime
 from openai import OpenAI
 
 from parser.general import GeneralNewsHTMLParser
@@ -8,8 +9,10 @@ from request import request_get_news
 
 # Initialize DynamoDB client
 dynamodb = boto3.resource('dynamodb')  # type: ignore
-table_name = os.environ['DYNAMODB_TABLE_NAME']
-table = dynamodb.Table(table_name)  # type: ignore
+news_table_name = os.environ['DYNAMODB_TABLE_NAME']
+batch_table_name = os.environ['DYNAMODB_BATCH_TABLE_NAME']
+news_table = dynamodb.Table(news_table_name)  # type: ignore
+batch_table = dynamodb.Table(batch_table_name)  # type: ignore
 
 # Initialize Secrets Manager client
 secrets_client = boto3.client('secretsmanager')
@@ -30,18 +33,17 @@ def get_openai_client():
 
 def handler(event, context):
     """
-    Lambda function handler for collecting news URLs
+    Lambda function handler for collecting news content and creating batch analysis request
     
     Expected event format:
     {
-        "source": "bbc|cnn|nyt|etc",  # Optional, default fetches from all sources
-        "limit": 10  # Optional, number of articles to fetch
+        "url": "https://news-url.com/article"
     }
     """
     try:
         url = event['url']
 
-        response = table.get_item(Key={'url': url})
+        response = news_table.get_item(Key={'url': url})
         if 'Item' not in response:
             raise ValueError(f"URL not found in DynamoDB: {url}")
         data = response['Item']
@@ -56,29 +58,24 @@ def handler(event, context):
 
         data['content'] = ' '.join(news_content.split())
         
-        # Analyze news with OpenAI
-        try:
-            analysis = analyze_news_with_openai(data.get('title', ''), news_content)
-            data['analysis'] = analysis
-            print(f"OpenAI analysis completed for URL: {actual_news_url}")
-        except Exception as analysis_error:
-            print(f"Warning: OpenAI analysis failed: {str(analysis_error)}")
-            # Continue even if analysis fails
-
+        # Update content in DynamoDB first
         if actual_news_url == url:
-            table.put_item(Item=data)
+            news_table.put_item(Item=data)
         else:
             # URL has been redirected, need to update the primary key
-            table.delete_item(Key={'url': url})
+            news_table.delete_item(Key={'url': url})
             data['url'] = actual_news_url
-            table.put_item(Item=data)
+            news_table.put_item(Item=data)
 
         print(f"News content updated for URL: {actual_news_url}")
+        
+        # Add to batch analysis queue
+        submit_batch(actual_news_url, data['title'], news_content)
             
         return {
             'statusCode': 200,
             'body': json.dumps({
-                'message': 'News content collected successfully',
+                'message': 'News content collected and queued for batch analysis',
             })
         }
     except Exception as e:
@@ -90,6 +87,7 @@ def handler(event, context):
                 'error': str(e)
             })
         }
+
 
 def get_news_content(url: str, mobile: bool = True, desktop: bool = True):
     raw_content, news_url = request_get_news(url, mobile=mobile, desktop=desktop)
@@ -103,25 +101,14 @@ def get_news_content(url: str, mobile: bool = True, desktop: bool = True):
 
     return parser.content, news_url
 
-def analyze_news_with_openai(title: str, content: str):
+
+def submit_batch(news_url: str, title: str, content: str):
     """
-    Analyze news content using OpenAI API
-    
-    Returns:
-    {
-        "industries": [
-            {
-                "domain": "產業領域名稱",
-                "impact_score": -5 to 5,
-                "reason": "影響原因說明"
-            }
-        ],
-        "type": "政策|營收|技術|成本|其他",
-        "genre": "新聞類型"
-    }
+    Submit batch request to OpenAI
     """
     client = get_openai_client()
-    
+        
+    # Create batch request file with JSONL format
     system = """
 你是一位專業的經濟新聞分析師,專門分析新聞對各產業的影響，可能有一個新聞有多個產業的影響。請以繁體中文回應,並嚴格遵守 JSON 格式。
 JSON 範例格式為
@@ -141,50 +128,77 @@ JSON 範例格式為
 內容: {content}
 """
     
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.7,
-        response_format={
-            "type": "json_schema", 
-            "json_schema": {
-                "name": "result_response",
-                "strict": True,
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "industries": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "domain": { "type": "string" },
-                                    "impact_score": { "type": "integer", "minimum": -5, "maximum": 5 },
-                                    "reason": { "type": "string" }
-                                },
-                                "required": ["domain", "impact_score", "reason"],
-                                "additionalProperties": False
-                            }
+    custom_id = news_url
+    request = {
+        "custom_id": custom_id,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "body": {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.7,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "result_response",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "industries": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "domain": {"type": "string"},
+                                        "impact_score": {"type": "integer", "minimum": -5, "maximum": 5},
+                                        "reason": {"type": "string"}
+                                    },
+                                    "required": ["domain", "impact_score", "reason"],
+                                    "additionalProperties": False
+                                }
+                            },
+                            "genre": {"type": "string"}
                         },
-                        "genre": { "type": "string" }
-                    },
-                    "required": ["industries", "genre"],
-                    "additionalProperties": False
+                        "required": ["industries", "genre"],
+                        "additionalProperties": False
+                    }
                 }
             }
         }
+    }
+    
+    # Create JSONL content
+    jsonl_content = json.dumps(request)
+    
+    # Upload batch input file
+    batch_file = client.files.create(
+        file=jsonl_content.encode('utf-8'),
+        purpose='batch'
     )
     
-    analysis = json.loads(response.choices[0].message.content)
-    return analysis
+    # Create batch
+    batch = client.batches.create(
+        input_file_id=batch_file.id,
+        endpoint="/v1/chat/completions",
+        completion_window="24h"
+    )
+    batch_table.put_item(Item={
+        'batch_id': batch.id,
+        'url': news_url,
+        'created_at': int(datetime.now().timestamp()),
+        'last_checked_at': int(datetime.now().timestamp())
+    })
+    print(f"Created new batch {batch.id}")
 
 
 if __name__ == "__main__":
     import sys
-    # For local testing
+
+
     test_event = {
         "url": sys.argv[1]
     }

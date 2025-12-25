@@ -48,14 +48,13 @@ resource "aws_lambda_function" "content_collector" {
   runtime         = var.lambda_runtime
   memory_size     = var.lambda_memory_size
   timeout         = var.lambda_timeout
-  # memory_size      = 512  # Increased for OpenAI API calls
-  # timeout          = 120  # Increased for OpenAI API response time
   architectures    = ["arm64"]
   layers           = [aws_lambda_layer_version.content_dependencies_layer.arn]
 
   environment {
     variables = {
       DYNAMODB_TABLE_NAME         = aws_dynamodb_table.news_urls_table.name
+      DYNAMODB_BATCH_TABLE_NAME   = aws_dynamodb_table.batch_requests_table.name
       ENVIRONMENT                 = var.environment
       OPENAI_API_KEY_SECRET_NAME  = aws_secretsmanager_secret.openai_api_key.name
     }
