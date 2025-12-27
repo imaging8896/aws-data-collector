@@ -9,7 +9,16 @@ import boto3
 # Import matplotlib with non-interactive backend
 import matplotlib
 matplotlib.use('Agg')  # Must be before importing pyplot
+import matplotlib.font_manager
 import matplotlib.pyplot as plt
+
+# Register custom font
+font_path = os.getenv("NOTO_SERIF_TC_FONT_PATH", "NotoSerifTC-VF.ttf")
+if os.path.exists(font_path):
+    matplotlib.font_manager.fontManager.addfont(font_path)
+    plt.rcParams['font.family'] = 'Noto Serif TC'
+
+plt.rcParams['axes.unicode_minus'] = False
 
 # Initialize DynamoDB client
 dynamodb = boto3.resource('dynamodb')
@@ -122,11 +131,7 @@ def generate_chart(trend_data, summary, days):
     """
     Generate matplotlib charts and return as base64 string
     """
-    try:
-        # Set Chinese font (use system fonts or fallback)
-        plt.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'SimHei', 'DejaVu Sans']
-        plt.rcParams['axes.unicode_minus'] = False
-        
+    try:        
         # Create figure with multiple subplots
         fig = plt.figure(figsize=(16, 12))
         
@@ -230,7 +235,7 @@ def generate_chart(trend_data, summary, days):
             summary_text += f"\n{i}. {ind['domain']}: {ind['average_impact']:.2f} ({ind['mentions']}則)"
         
         ax6.text(0.1, 0.5, summary_text, fontsize=12, verticalalignment='center',
-                fontfamily='sans-serif', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
         ax6.set_title('統計摘要', fontsize=14, fontweight='bold')
         
         plt.tight_layout()

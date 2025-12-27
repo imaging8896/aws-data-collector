@@ -1,11 +1,27 @@
 # ===== Generate Trend Chart Lambda =====
 
 # Lambda function source code archive
+# Copy font file before archiving
+resource "terraform_data" "copy_font_to_chart_generator" {
+    triggers_replace = {
+        font_file = filemd5("${path.module}/font/NotoSerifTC-VF.ttf")
+    }
+
+    provisioner "local-exec" {
+        command = <<EOT
+            mkdir -p ${path.module}/lambda/generate_trend_chart
+            cp ${path.module}/font/NotoSerifTC-VF.ttf ${path.module}/lambda/generate_trend_chart/
+        EOT
+    }
+}
+
 data "archive_file" "lambda_chart_generator_zip" {
-  type        = "zip"
-  source_dir  = "${path.module}/lambda/generate_trend_chart"
-  output_path = "${path.module}/lambda_chart_generator_function.zip"
-  excludes    = ["requirements.txt", "__pycache__"]
+    type        = "zip"
+    source_dir  = "${path.module}/lambda/generate_trend_chart"
+    output_path = "${path.module}/lambda_chart_generator_function.zip"
+    excludes    = ["requirements.txt", "__pycache__"]
+
+    depends_on = [terraform_data.copy_font_to_chart_generator]
 }
 
 # Layer 1: NumPy (base dependency)
