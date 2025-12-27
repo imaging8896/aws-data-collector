@@ -1,8 +1,11 @@
 import json
 import os
-import boto3
+
 from datetime import datetime
 from openai import OpenAI
+
+import boto3
+import curl_cffi
 
 from parser.general import GeneralNewsHTMLParser
 from request import request_get_news
@@ -50,10 +53,19 @@ def handler(event, context):
 
         try:
             news_content, actual_news_url = get_news_content(url, mobile=True, desktop=True)
+        except curl_cffi.exceptions.RequestException as e:
+            if e.response is not None and e.response.status_code == 404:
+                news_table.delete_item(Key={'url': url})
+                print(f"Deleted URL due to 404 Not Found: {url}")
+                return
+            # Leave it in the DB
+            raise ValueError(f"Failed to get news content for {url}: RequestException") from e
         except Exception as content_error:
-            raise ValueError(f"Failed to get news content: {str(content_error)}")
+            # Leave it in the DB
+            raise ValueError(f"Failed to get news content for {url}: {str(content_error)}")
         
         if not news_content:
+            # Leave it in the DB
             raise ValueError(f"No news content retrieved from URL: {url}")
 
         data['content'] = ' '.join(news_content.split())
