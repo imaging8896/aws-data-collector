@@ -49,7 +49,7 @@ resource "aws_lambda_function" "data_collector" {
   handler         = "main.handler"
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
   runtime         = var.lambda_runtime
-  memory_size     = var.lambda_memory_size
+  memory_size     = 192
   timeout         = var.lambda_timeout
   architectures    = ["arm64"]
   layers           = [aws_lambda_layer_version.dependencies_layer.arn]

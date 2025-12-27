@@ -46,7 +46,7 @@ resource "aws_lambda_function" "batch_processor" {
   handler         = "main.handler"
   source_code_hash = data.archive_file.lambda_batch_processor_zip.output_base64sha256
   runtime         = var.lambda_runtime
-  memory_size     = var.lambda_memory_size
+  memory_size     = 192
   timeout         = var.lambda_timeout
   architectures    = ["arm64"]
   layers           = [aws_lambda_layer_version.batch_processor_dependencies_layer.arn]
