@@ -83,3 +83,49 @@ resource "aws_dynamodb_table" "batch_requests_table" {
     ManagedBy   = "Terraform"
   }
 }
+
+# DynamoDB Table for Economic Trend Charts
+resource "aws_dynamodb_table" "economic_trends_table" {
+  name         = "${var.environment}-${var.project_name}-economic-trends"
+  billing_mode = var.dynamodb_billing_mode
+  hash_key     = "chart_id"
+
+  attribute {
+    name = "chart_id"
+    type = "S"
+  }
+
+  # GSI for querying by creation time
+  global_secondary_index {
+    name            = "CreatedAtIndex"
+    hash_key        = "days"
+    range_key       = "created_at"
+    projection_type = "ALL"
+  }
+
+  attribute {
+    name = "days"
+    type = "N"
+  }
+
+  attribute {
+    name = "created_at"
+    type = "N"
+  }
+
+  # Point-in-time recovery for data protection
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  # Server-side encryption
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
