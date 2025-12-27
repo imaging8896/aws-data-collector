@@ -18,6 +18,8 @@ category_tw_topic_business_id = "CAAqKggKIiRDQkFTRlFvSUwyMHZNRGx6TVdZU0JYcG9MVlJ
 
 VALID_SOURCE_DOMAINS = {
     # "www.upmedia.mg", # Verified can't get news content e.g. https://www.upmedia.mg/tw/lifestyle/food/247791
+    # "tw.stock.yahoo.com", # Worked but need review
+    # "tw.news.yahoo.com", # Worked but need review
     "news.cnyes.com",
     "www.moneydj.com", 
     "www.ctee.com.tw",
