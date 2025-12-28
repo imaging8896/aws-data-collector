@@ -121,6 +121,7 @@ resource "aws_lambda_function" "chart_generator" {
       DYNAMODB_TREND_TABLE_NAME = aws_dynamodb_table.economic_trends_table.name
       S3_CHART_BUCKET_NAME      = aws_s3_bucket.trend_charts.id
       ENVIRONMENT               = var.environment
+      PROJECT_NAME              = var.project_name
     }
   }
 
@@ -141,4 +142,24 @@ resource "aws_cloudwatch_log_group" "lambda_chart_generator_logs" {
     Environment = var.environment
     ManagedBy   = "Terraform"
   }
+}
+
+# Lambda Destination: Trigger static website generator on success
+resource "aws_lambda_function_event_invoke_config" "chart_generator_destination" {
+  function_name = aws_lambda_function.chart_generator.function_name
+
+  destination_config {
+    on_success {
+      destination = aws_lambda_function.static_website_generator.arn
+    }
+  }
+}
+
+# Permission for chart generator to invoke static website generator
+resource "aws_lambda_permission" "chart_generator_invoke_website" {
+  statement_id  = "AllowExecutionFromChartGenerator"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.static_website_generator.function_name
+  principal     = "lambda.amazonaws.com"
+  source_arn    = aws_lambda_function.chart_generator.arn
 }

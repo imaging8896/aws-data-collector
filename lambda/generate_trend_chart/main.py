@@ -130,9 +130,11 @@ def handler(event, context):
         # Update DynamoDB with S3 reference
         trend_table.update_item(
             Key={'chart_id': trend_id},
-            UpdateExpression='SET s3_chart_url = :url, chart_generated = :gen, chart_generated_at = :ts',
+            UpdateExpression='SET s3_chart_url = :url, s3_bucket = :bucket, s3_key = :key, chart_generated = :gen, chart_generated_at = :ts',
             ExpressionAttributeValues={
                 ':url': s3_url,
+                ':bucket': s3_bucket_name,
+                ':key': s3_key,
                 ':gen': True,
                 ':ts': int(datetime.now().timestamp())
             }
@@ -140,6 +142,7 @@ def handler(event, context):
         
         print(f"Chart generated and saved for {trend_id}")
         
+        # Lambda Destination will automatically trigger static website generator
         return {
             'statusCode': 200,
             'body': json.dumps({

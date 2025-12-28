@@ -72,14 +72,34 @@ resource "aws_s3_bucket_lifecycle_configuration" "trend_charts" {
   }
 }
 
-# Block public access (charts accessed via signed URLs or CloudFront)
+# Public access configuration for static website hosting
 resource "aws_s3_bucket_public_access_block" "trend_charts" {
   bucket = aws_s3_bucket.trend_charts.id
 
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
+}
+
+# Bucket policy to allow public read access for charts
+resource "aws_s3_bucket_policy" "trend_charts_public_read" {
+  bucket = aws_s3_bucket.trend_charts.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "PublicReadGetObject"
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = "s3:GetObject"
+        Resource  = "${aws_s3_bucket.trend_charts.arn}/charts/*"
+      }
+    ]
+  })
+
+  depends_on = [aws_s3_bucket_public_access_block.trend_charts]
 }
 
 # CORS configuration (if accessed from web browser)
