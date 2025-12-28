@@ -72,36 +72,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "trend_charts" {
   }
 }
 
-# Public access configuration for static website hosting
-resource "aws_s3_bucket_public_access_block" "trend_charts" {
-  bucket = aws_s3_bucket.trend_charts.id
-
-  block_public_acls       = false
-  block_public_policy     = false
-  ignore_public_acls      = false
-  restrict_public_buckets = false
-}
-
-# Bucket policy to allow public read access for charts
-resource "aws_s3_bucket_policy" "trend_charts_public_read" {
-  bucket = aws_s3_bucket.trend_charts.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid       = "PublicReadGetObject"
-        Effect    = "Allow"
-        Principal = "*"
-        Action    = "s3:GetObject"
-        Resource  = "${aws_s3_bucket.trend_charts.arn}/charts/*"
-      }
-    ]
-  })
-
-  depends_on = [aws_s3_bucket_public_access_block.trend_charts]
-}
-
 # CORS configuration (if accessed from web browser)
 resource "aws_s3_bucket_cors_configuration" "trend_charts" {
   bucket = aws_s3_bucket.trend_charts.id
@@ -114,6 +84,9 @@ resource "aws_s3_bucket_cors_configuration" "trend_charts" {
     max_age_seconds = 3000
   }
 }
+
+# Note: Public access and bucket policy are now managed in cloudfront.tf
+# The bucket is private and only accessible via CloudFront OAC
 
 # Output the bucket name for Lambda environment variable
 output "trend_charts_bucket_name" {

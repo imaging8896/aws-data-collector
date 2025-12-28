@@ -11,6 +11,7 @@ s3_client = boto3.client('s3')
 # Environment variables
 trend_table_name = os.environ['DYNAMODB_TREND_TABLE_NAME']
 s3_bucket_name = os.environ['S3_CHART_BUCKET_NAME']
+cloudfront_domain = os.environ.get('CLOUDFRONT_DOMAIN', '')
 
 trend_table = dynamodb.Table(trend_table_name)  # type: ignore
 
@@ -68,13 +69,15 @@ def handler(event, context):
         summary = item.get('summary', {})
         days = int(item.get('days', 7))
         
-        # Get chart URL (from S3)
+        # Get chart URL (use CloudFront if available)
         s3_chart_url = item.get('s3_chart_url', '')
         s3_bucket = item.get('s3_bucket', s3_bucket_name)
         s3_key = item.get('s3_key', f'charts/{trend_id}.png')
         
-        # Convert S3 URI to HTTPS URL
-        if s3_chart_url.startswith('s3://'):
+        # Use CloudFront URL for better performance and security
+        if cloudfront_domain:
+            chart_url = f"https://{cloudfront_domain}/{s3_key}"
+        elif s3_chart_url.startswith('s3://'):
             chart_url = f"https://{s3_bucket}.s3.amazonaws.com/{s3_key}"
         else:
             chart_url = s3_chart_url
@@ -98,7 +101,11 @@ def handler(event, context):
                 }
             )
             
-            html_url = f"https://{s3_bucket_name}.s3.amazonaws.com/{html_key}"
+            # Use CloudFront URL if available
+            if cloudfront_domain:
+                html_url = f"https://{cloudfront_domain}/{html_key}"
+            else:
+                html_url = f"https://{s3_bucket_name}.s3.amazonaws.com/{html_key}"
             print(f"HTML page uploaded to S3: {html_url}")
             
         except Exception as e:
