@@ -42,13 +42,19 @@ def handler(event, context):
     """
     Generate chart from existing trend data in DynamoDB
     
-    Expected event format:
-    {
-        "trend_id": "trend-7d-20251227-143025"
-    }
+    Event can be from:
+    1. Direct invocation: {"trend_id": "trend-7d-20251227"}
+    2. Lambda Destination: {"responsePayload": {"statusCode": 200, "trend_id": "..."}}
     """
     try:
-        trend_id = event.get('trend_id')
+        # Handle Lambda Destination event format
+        if 'responsePayload' in event:
+            # Extract from Lambda Destination success event
+            payload = event['responsePayload']
+            trend_id = payload.get('trend_id')
+        else:
+            # Direct invocation
+            trend_id = event.get('trend_id')
         
         if not trend_id:
             return {

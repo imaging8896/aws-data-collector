@@ -78,6 +78,26 @@ resource "aws_cloudwatch_log_group" "lambda_trend_analyzer_logs" {
   }
 }
 
+# Lambda Destination: Trigger chart generator on success
+resource "aws_lambda_function_event_invoke_config" "trend_analyzer_destination" {
+  function_name = aws_lambda_function.trend_analyzer.function_name
+
+  destination_config {
+    on_success {
+      destination = aws_lambda_function.chart_generator.arn
+    }
+  }
+}
+
+# Permission for trend analyzer to invoke chart generator
+resource "aws_lambda_permission" "trend_analyzer_invoke_chart" {
+  statement_id  = "AllowExecutionFromTrendAnalyzer"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.chart_generator.function_name
+  principal     = "lambda.amazonaws.com"
+  source_arn    = aws_lambda_function.trend_analyzer.arn
+}
+
 # Lambda URL for easy HTTP access (optional)
 resource "aws_lambda_function_url" "trend_analyzer_url" {
   function_name      = aws_lambda_function.trend_analyzer.function_name

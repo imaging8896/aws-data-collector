@@ -208,13 +208,15 @@ def handler(event, context):
         if trend_data:
             trend_id = save_trend_data(trend_data, summary, days)
         
+        # Return trend_id for Lambda Destination to pass to chart generator
         return {
             'statusCode': 200,
             'body': json.dumps({
                 'summary': summary,
                 'trend_data': trend_data,
                 'trend_id': trend_id
-            }, default=decimal_default, ensure_ascii=False)
+            }, default=decimal_default, ensure_ascii=False),
+            'trend_id': trend_id  # Add trend_id at top level for Lambda Destination
         }
         
     except Exception as e:
