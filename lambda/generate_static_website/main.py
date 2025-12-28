@@ -87,8 +87,10 @@ def handler(event, context):
         
         # Upload to S3
         html_key = f"charts/{trend_id}.html"
+        index_key = "index.html"
         
         try:
+            # Upload specific trend HTML
             s3_client.put_object(
                 Bucket=s3_bucket_name,
                 Key=html_key,
@@ -101,12 +103,30 @@ def handler(event, context):
                 }
             )
             
+            # Upload index.html as the latest trend (same content)
+            s3_client.put_object(
+                Bucket=s3_bucket_name,
+                Key=index_key,
+                Body=html_content.encode('utf-8'),
+                ContentType='text/html; charset=utf-8',
+                CacheControl='max-age=300',  # Shorter cache for index (5 minutes)
+                Metadata={
+                    'trend_id': trend_id,
+                    'generated_at': datetime.now().isoformat(),
+                    'is_latest': 'true'
+                }
+            )
+            
             # Use CloudFront URL if available
             if cloudfront_domain:
                 html_url = f"https://{cloudfront_domain}/{html_key}"
+                index_url = f"https://{cloudfront_domain}/"
             else:
                 html_url = f"https://{s3_bucket_name}.s3.amazonaws.com/{html_key}"
+                index_url = f"https://{s3_bucket_name}.s3.amazonaws.com/{index_key}"
+            
             print(f"HTML page uploaded to S3: {html_url}")
+            print(f"Latest trend available at: {index_url}")
             
         except Exception as e:
             print(f"Failed to upload HTML to S3: {str(e)}")
@@ -135,7 +155,8 @@ def handler(event, context):
             'body': json.dumps({
                 'message': 'Static website generated successfully',
                 'trend_id': trend_id,
-                's3_html_url': html_url
+                's3_html_url': html_url,
+                'latest_url': index_url if cloudfront_domain else f"https://{s3_bucket_name}.s3.amazonaws.com/{index_key}"
             })
         }
         
