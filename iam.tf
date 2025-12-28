@@ -100,3 +100,36 @@ resource "aws_iam_role_policy" "lambda_secrets_policy" {
     ]
   })
 }
+
+# IAM Policy for Lambda to access S3 (for chart storage)
+resource "aws_iam_role_policy" "lambda_s3_policy" {
+  name = "${var.environment}-${var.project_name}-lambda-s3-policy"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:PutObjectAcl",
+          "s3:GetObject",
+          "s3:DeleteObject"
+        ]
+        Resource = [
+          "${aws_s3_bucket.trend_charts.arn}/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.trend_charts.arn
+        ]
+      }
+    ]
+  })
+}

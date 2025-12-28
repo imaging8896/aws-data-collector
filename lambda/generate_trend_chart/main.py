@@ -20,9 +20,14 @@ if os.path.exists(font_path):
 
 plt.rcParams['axes.unicode_minus'] = False
 
-# Initialize DynamoDB client
+# Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')
+s3_client = boto3.client('s3')
+
+# Environment variables
 trend_table_name = os.environ['DYNAMODB_TREND_TABLE_NAME']
+s3_bucket_name = os.environ['S3_CHART_BUCKET_NAME']
+
 trend_table = dynamodb.Table(trend_table_name)  # type: ignore
 
 
@@ -70,21 +75,22 @@ def handler(event, context):
         days = int(item.get('days', 7))
         
         # Check if chart already exists
-        if item.get('chart_generated') and item.get('chart_image'):
-            print(f"Chart already exists for {trend_id}")
+        if item.get('chart_generated') and item.get('s3_chart_url'):
+            print(f"Chart already exists for {trend_id}: {item.get('s3_chart_url')}")
             return {
                 'statusCode': 200,
                 'body': json.dumps({
                     'message': 'Chart already exists',
                     'trend_id': trend_id,
-                    'chart_generated': True
+                    'chart_generated': True,
+                    's3_chart_url': item.get('s3_chart_url')
                 })
             }
         
-        # Generate chart
-        chart_image = generate_chart(trend_data, summary, days)
+        # Generate chart and get PNG bytes
+        chart_png_bytes = generate_chart(trend_data, summary, days)
         
-        if not chart_image:
+        if not chart_png_bytes:
             return {
                 'statusCode': 500,
                 'body': json.dumps({
@@ -92,12 +98,41 @@ def handler(event, context):
                 })
             }
         
-        # Update DynamoDB with chart
+        # Upload to S3
+        s3_key = f"charts/{trend_id}.png"
+        try:
+            s3_client.put_object(
+                Bucket=s3_bucket_name,
+                Key=s3_key,
+                Body=chart_png_bytes,
+                ContentType='image/png',
+                CacheControl='max-age=86400',  # Cache for 1 day
+                Metadata={
+                    'trend_id': trend_id,
+                    'days': str(days),
+                    'generated_at': datetime.now().isoformat()
+                }
+            )
+            
+            s3_url = f"s3://{s3_bucket_name}/{s3_key}"
+            print(f"Chart uploaded to S3: {s3_url}")
+            
+        except Exception as e:
+            print(f"Failed to upload to S3: {str(e)}")
+            return {
+                'statusCode': 500,
+                'body': json.dumps({
+                    'message': 'Failed to upload chart to S3',
+                    'error': str(e)
+                })
+            }
+        
+        # Update DynamoDB with S3 reference
         trend_table.update_item(
             Key={'chart_id': trend_id},
-            UpdateExpression='SET chart_image = :img, chart_generated = :gen, chart_generated_at = :ts',
+            UpdateExpression='SET s3_chart_url = :url, chart_generated = :gen, chart_generated_at = :ts',
             ExpressionAttributeValues={
-                ':img': chart_image,
+                ':url': s3_url,
                 ':gen': True,
                 ':ts': int(datetime.now().timestamp())
             }
@@ -110,7 +145,8 @@ def handler(event, context):
             'body': json.dumps({
                 'message': 'Chart generated successfully',
                 'trend_id': trend_id,
-                'chart_size_bytes': len(chart_image)
+                's3_chart_url': s3_url,
+                'chart_size_bytes': len(chart_png_bytes)
             })
         }
         
@@ -240,14 +276,14 @@ def generate_chart(trend_data, summary, days):
         
         plt.tight_layout()
         
-        # Convert to base64
+        # Convert to PNG bytes
         buffer = BytesIO()
         plt.savefig(buffer, format='png', dpi=100, bbox_inches='tight')
         buffer.seek(0)
-        image_base64 = base64.b64encode(buffer.read()).decode('utf-8')
+        png_bytes = buffer.read()
         plt.close()
         
-        return image_base64
+        return png_bytes
         
     except Exception as e:
         print(f"Error generating chart: {str(e)}")
