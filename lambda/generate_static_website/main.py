@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 import boto3
 
@@ -222,6 +222,10 @@ def generate_html(trend_id, trend_data, summary, days, chart_url):
         </tr>
         """
     
+    # Use UTC+8 timezone
+    tz_utc8 = timezone(timedelta(hours=8))
+    current_time_utc8 = datetime.now(tz_utc8)
+    
     html_content = f"""
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -433,7 +437,7 @@ def generate_html(trend_id, trend_data, summary, days, chart_url):
         </div>
         
         <div class="footer">
-            <p>🚀 AWS Data Collector | 生成時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Trend ID: {trend_id}</p>
+            <p>🚀 AWS Data Collector | 生成時間: {current_time_utc8.strftime('%Y-%m-%d %H:%M:%S')} (UTC+8) | Trend ID: {trend_id}</p>
         </div>
     </div>
 </body>
