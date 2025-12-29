@@ -21,7 +21,13 @@ VALID_SOURCE_DOMAINS = {
     # "www.upmedia.mg", # Verified can't get news content e.g. https://www.upmedia.mg/tw/lifestyle/food/247791
     # "tw.stock.yahoo.com", # Worked but need review
     # "tw.news.yahoo.com", # Worked but need review
-    "finance.ettoday.net"
+    # "www.gvm.com.tw", # 遠見雜誌
+    # "wantrich.chinatimes.com", # 中時旺得富
+    # "www.cmoney.tw",
+    # "www.storm.mg", # 風傳媒
+    # https://news.pts.org.tw/video/15379 # 公視新聞
+    # "money.udn.com", # 經濟日報 但沒有 article tag
+    # "finance.ettoday.net",
     "news.cnyes.com",
     "www.moneydj.com", 
     "www.ctee.com.tw",
@@ -34,8 +40,8 @@ def handler(event, context):
     
     Expected event format:
     {
-        "source": "bbc|cnn|nyt|etc",  # Optional, default fetches from all sources
-        "limit": 10  # Optional, number of articles to fetch
+        "category_id": "xxxx",
+        "category": "topics"  # Optional, topics, articles or stories
     }
     """
     try:
