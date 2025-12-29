@@ -15,7 +15,7 @@ This project uses cost-optimized AWS services:
 - AWS Account with appropriate permissions
 - AWS CLI configured with credentials
 - Docker (for building Lambda layers with ARM64 architecture, in your case maybe x86-64)
-- OpenAI API key with Batch API access
+- Google Gemini API key
 
 ## Setup
 
@@ -49,7 +49,7 @@ Create `terraform.tfvars`:
 cat > terraform.tfvars <<EOF
 environment     = "dev"
 project_name    = "aws-data-collector"
-openai_api_key  = "sk-your-openai-api-key-here"
+openai_api_key  = "your-gemini-api-key-here"
 EOF
 ```
 
@@ -87,7 +87,31 @@ aws lambda invoke \
   --cli-binary-format raw-in-base64-out \
   --payload '{"category_id":"CAAqJQgKIh9DQkFTRVFvSUwyMHZNREpmTjNRU0JYcG9MVlJYS0FBUAE"}' \
   response.json
+
+  # Trigger trend analyzer (async - will auto-trigger chart and website generation)
+aws lambda invoke \
+  --function-name dev-aws-data-collector-trend-analyzer \
+  --invocation-type Event \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{"days": 14}' \
+  response.json
 ```
+
+# Trigger chart generator (async invocation to enable Destinations)
+aws lambda invoke \
+  --function-name dev-aws-data-collector-chart-generator \
+  --invocation-type Event \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{"trend_id": "trend-14d-20251227-081625"}' \
+  response.json
+
+# Trigger static website generator directly
+aws lambda invoke \
+  --function-name dev-aws-data-collector-static-website-generator \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{"trend_id": "trend-14d-20251227-081625"}' \
+  response.json
+
 
 ### Query Results
 
@@ -116,7 +140,7 @@ Each news article is analyzed for:
 ## Cost Optimization Features
 
 - **Lambda ARM64**: Graviton processors provide 20% better price-performance
-- **OpenAI Batch API**: 50% cheaper than synchronous API calls
+- **Gemini API**: Free tier for experimental thinking mode
 - **DynamoDB On-Demand**: Pay-per-request billing (no minimum costs when idle)
 - **EventBridge**: First 14 million invocations/month free
 - **CloudWatch Logs**: 7-day retention to minimize storage costs
@@ -127,13 +151,13 @@ Each news article is analyzed for:
 Based on collecting 10 news articles/day:
 
 | Service | Monthly Cost |
-|---------|--------------|
+|---------|--------------||
 | Lambda (ARM64) | ~$0.02 |
 | DynamoDB | ~$0.05 |
 | Secrets Manager | $0.40 |
 | CloudWatch Logs | ~$0.03 |
-| OpenAI Batch API | ~$0.06 |
-| **Total** | **~$0.56/month** |
+| Gemini API (experimental) | $0.00 |
+| **Total** | **~$0.50/month** |
 
 **Cost Optimization Tip**: Replace Secrets Manager with SSM Parameter Store to save $0.40/month (reduce to $0.16/month)
 
@@ -156,8 +180,7 @@ Based on collecting 10 news articles/day:
 ├── lambda/
 │   ├── dispatcher/                  # Hourly trigger handler
 │   ├── get_news_urls/              # Google News RSS collector
-│   ├── get_news_content/           # Article content extractor + batch creator
-│   └── process_batch_results/      # OpenAI batch result processor
+│   └── get_news_content/           # Article content extractor + Gemini analysis
 └── .github/
     └── copilot-instructions.md     # AI agent development guidelines
 ```
@@ -177,16 +200,10 @@ EventBridge (hourly)
 Dispatcher Lambda
     ↓
 Get News URLs Lambda → DynamoDB (news-urls)
-    ↓ (for each new URL)
-Get News Content Lambda → DynamoDB (batch-requests)
+    ↓ (SQS queue for each new URL)
+Get News Content Lambda → Gemini API (immediate analysis)
     ↓
-OpenAI Batch API (24h processing)
-    ↓
-DynamoDB (batch-request)
-    ↓
-EventBridge (every 5 min) → Process Batch Results Lambda
-    ↓
-DynamoDB (check batch-request)
+DynamoDB (news-urls with analysis)
 ```
 
 ### Destroy Infrastructure
@@ -200,7 +217,7 @@ terraform destroy
 ## Security
 
 - Never commit `terraform.tfvars`, `.env`, or `.terraform/` to version control
-- OpenAI API key stored in AWS Secrets Manager with encryption
+- Gemini API key stored in AWS Secrets Manager with encryption
 - DynamoDB tables use server-side encryption
 - Point-in-time recovery enabled for data protection
 - IAM roles follow least-privilege principles

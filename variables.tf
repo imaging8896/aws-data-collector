@@ -34,8 +34,8 @@ variable "dynamodb_billing_mode" {
   default     = "PAY_PER_REQUEST"
 }
 
-variable "openai_api_key" {
-  description = "OpenAI API key for news analysis"
+variable "gemini_api_key" {
+  description = "Google Gemini API key for news analysis"
   type        = string
   sensitive   = true
 }

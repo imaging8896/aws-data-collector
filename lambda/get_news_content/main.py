@@ -2,7 +2,8 @@ import json
 import os
 
 from datetime import datetime
-from openai import OpenAI
+from google import genai
+from google.genai import types
 
 import boto3
 import curl_cffi
@@ -13,25 +14,24 @@ from request import request_get_news
 # Initialize DynamoDB client
 dynamodb = boto3.resource('dynamodb')  # type: ignore
 news_table_name = os.environ['DYNAMODB_TABLE_NAME']
-batch_table_name = os.environ['DYNAMODB_BATCH_TABLE_NAME']
 news_table = dynamodb.Table(news_table_name)  # type: ignore
-batch_table = dynamodb.Table(batch_table_name)  # type: ignore
 
 # Initialize Secrets Manager client
 secrets_client = boto3.client('secretsmanager')
-openai_secret_name = os.environ['OPENAI_API_KEY_SECRET_NAME']
+# gemini_secret_name = os.environ['GEMINI_API_KEY_SECRET_NAME']
 
-# Cache OpenAI client
-_openai_client = None
+# Cache Gemini client
+_gemini_client = None
 
-def get_openai_client():
-    global _openai_client
-    if _openai_client is None:
-        # Retrieve OpenAI API key from Secrets Manager
-        secret_response = secrets_client.get_secret_value(SecretId=openai_secret_name)
-        api_key = secret_response['SecretString']
-        _openai_client = OpenAI(api_key=api_key)
-    return _openai_client
+def get_gemini_client():
+    global _gemini_client
+    if _gemini_client is None:
+        # Retrieve Gemini API key from Secrets Manager
+        # secret_response = secrets_client.get_secret_value(SecretId=gemini_secret_name)
+        # api_key = secret_response['SecretString']
+        api_key = "AIzaSyCfkmKhYKKsEF-Sstr9OdpU0N2zcNSyxmo"
+        _gemini_client = genai.Client(api_key=api_key)
+    return _gemini_client
 
 
 def handler(event, context):
@@ -126,13 +126,25 @@ def process_news_url(url):
 
         print(f"News content updated for URL: {actual_news_url}")
         
-        # Add to batch analysis queue
-        submit_batch(actual_news_url, data['title'], news_content)
+        # Analyze with Gemini immediately
+        analysis_result = analyze_with_gemini(data['title'], news_content)
+        
+        # Update analysis in DynamoDB
+        news_table.update_item(
+            Key={'url': actual_news_url},
+            UpdateExpression='SET analysis = :analysis, analysis_updated_at = :updated_at',
+            ExpressionAttributeValues={
+                ':analysis': analysis_result,
+                ':updated_at': int(datetime.now().timestamp())
+            }
+        )
+        print(f"Analysis completed for URL: {actual_news_url}")
             
         return {
             'statusCode': 200,
             'body': json.dumps({
-                'message': 'News content collected and queued for batch analysis',
+                'message': 'News content collected and analyzed',
+                'url': actual_news_url
             })
         }
     except Exception as e:
@@ -159,97 +171,74 @@ def get_news_content(url: str, mobile: bool = True, desktop: bool = True):
     return parser.content, news_url
 
 
-def submit_batch(news_url: str, title: str, content: str):
+def analyze_with_gemini(title: str, content: str) -> dict:
     """
-    Submit batch request to OpenAI
+    Analyze news with Gemini 3.0 Pro Thinking Mode
     """
-    client = get_openai_client()
-        
-    # Create batch request file with JSONL format
-    system = """
-你是一位專業的經濟新聞分析師,專門分析新聞對各產業的影響，可能有一個新聞有多個產業的影響。請以繁體中文回應,並嚴格遵守 JSON 格式。
-JSON 範例格式為
-{
+    client = get_gemini_client()
+    
+    prompt = f"""
+你是一位專業的經濟新聞分析師,專門分析新聞的內容對各產業的影響。
+請以此新聞內容為唯一依據，進行以下產業分析:
+1.直接影響產業: 新聞內容中提及的所有產業領域
+2.間接影響產業: 根據新聞內容推論可能受到影響的相關產業領域
+
+JSON 格式要求：
+{{
     "industries": [
-        {
+        {{
             "domain": "產業領域名稱，例如: 半導體、電動車、金融、零售等",
-            "impact_score":  2, // Integer -5 to 5
-            "reason": "影響原因說明"
-        }
+            "impact_score": 2,  // Integer -5 to 5
+            "reason": "影響原因，請條列說明評分理由"
+        }}
     ],
     "genre": "新聞體裁(例如:快訊、深度報導、分析評論、財報、公告等)"
-}
+}}
+
+新聞標題: {title}
+新聞內容: {content}
+
+
+請嚴格按照上述 JSON 格式回應，不要包含任何額外的文字說明。
 """
-    prompt = f"""你是一位專業的經濟新聞分析師。請分析以下新聞內容:
-標題: {title}
-內容: {content}
-"""
     
-    custom_id = news_url
-    request = {
-        "custom_id": custom_id,
-        "method": "POST",
-        "url": "/v1/chat/completions",
-        "body": {
-            "model": "gpt-4o-mini",
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.7,
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "result_response",
-                    "strict": True,
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "industries": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "domain": {"type": "string"},
-                                        "impact_score": {"type": "integer", "minimum": -5, "maximum": 5},
-                                        "reason": {"type": "string"}
-                                    },
-                                    "required": ["domain", "impact_score", "reason"],
-                                    "additionalProperties": False
-                                }
-                            },
-                            "genre": {"type": "string"}
-                        },
-                        "required": ["industries", "genre"],
-                        "additionalProperties": False
-                    }
-                }
-            }
-        }
-    }
-    
-    # Create JSONL content
-    jsonl_content = json.dumps(request)
-    
-    # Upload batch input file
-    batch_file = client.files.create(
-        file=jsonl_content.encode('utf-8'),
-        purpose='batch'
-    )
-    
-    # Create batch
-    batch = client.batches.create(
-        input_file_id=batch_file.id,
-        endpoint="/v1/chat/completions",
-        completion_window="24h"
-    )
-    batch_table.put_item(Item={
-        'batch_id': batch.id,
-        'url': news_url,
-        'created_at': int(datetime.now().timestamp()),
-        'last_checked_at': int(datetime.now().timestamp())
-    })
-    print(f"Created new batch {batch.id}")
+    try:
+        response = client.models.generate_content(
+            model='gemini-3-pro-preview',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                thinking_config=types.ThinkingConfig(
+                    # Use HIGH for the most in-depth reasoning; LOW is also available
+                    thinking_level=types.ThinkingLevel.HIGH
+                ),
+                temperature=0.7,
+                response_mime_type='application/json'
+            )
+        )
+        
+        # Parse JSON response
+        analysis = json.loads(response.text)
+        
+        # Validate required fields
+        if 'industries' not in analysis or 'genre' not in analysis:
+            raise ValueError("Missing required fields in Gemini response")
+        
+        # Validate industries structure
+        for industry in analysis['industries']:
+            if 'domain' not in industry or 'impact_score' not in industry or 'reason' not in industry:
+                raise ValueError("Invalid industry structure in Gemini response")
+            if not isinstance(industry['impact_score'], int) or not (-5 <= industry['impact_score'] <= 5):
+                raise ValueError(f"Invalid impact_score: {industry['impact_score']}")
+        
+        return analysis
+        
+    except json.JSONDecodeError as e:
+        print(f"Failed to parse Gemini response as JSON: {e}")
+        print(f"Response text: {response.text}")
+        raise ValueError(f"Invalid JSON response from Gemini: {e}")
+    except Exception as e:
+        print(f"Error calling Gemini API: {e}")
+        raise
 
 
 if __name__ == "__main__":

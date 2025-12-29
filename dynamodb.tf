@@ -38,52 +38,6 @@ resource "aws_dynamodb_table" "news_urls_table" {
   }
 }
 
-# DynamoDB Table for OpenAI Batch Requests
-resource "aws_dynamodb_table" "batch_requests_table" {
-  name         = "${var.environment}-${var.project_name}-batch-requests"
-  billing_mode = var.dynamodb_billing_mode
-  hash_key     = "batch_id"
-
-  attribute {
-    name = "batch_id"
-    type = "S"
-  }
-
-  # GSI for querying by status
-  global_secondary_index {
-    name            = "URL"
-    hash_key        = "url"
-    range_key       = "created_at"
-    projection_type = "ALL"
-  }
-
-  attribute {
-    name = "url"
-    type = "S"
-  }
-
-  attribute {
-    name = "created_at"
-    type = "N"
-  }
-
-  # Point-in-time recovery for data protection
-  point_in_time_recovery {
-    enabled = true
-  }
-
-  # Server-side encryption
-  server_side_encryption {
-    enabled = true
-  }
-
-  tags = {
-    Project     = var.project_name
-    Environment = var.environment
-    ManagedBy   = "Terraform"
-  }
-}
-
 # DynamoDB Table for Economic Trend Charts
 resource "aws_dynamodb_table" "economic_trends_table" {
   name         = "${var.environment}-${var.project_name}-economic-trends"
