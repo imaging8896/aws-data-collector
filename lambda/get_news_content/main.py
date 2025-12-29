@@ -39,12 +39,57 @@ def handler(event, context):
     Lambda function handler for collecting news content and creating batch analysis request
     
     Expected event format:
-    {
-        "url": "https://news-url.com/article"
-    }
+    1. Direct invocation: {"url": "https://news-url.com/article"}
+    2. SQS event: {"Records": [{"body": "{\"url\": \"...\"}"}]}
     """
     try:
-        url = event['url']
+        # Handle SQS event format
+        if 'Records' in event:
+            # Process SQS messages
+            batch_item_failures = []
+            
+            for record in event['Records']:
+                try:
+                    # Parse message body
+                    message_body = json.loads(record['body'])
+                    url = message_body['url']
+                    
+                    # Process the URL
+                    process_news_url(url)
+                    
+                except Exception as e:
+                    print(f"Error processing SQS message: {str(e)}")
+                    # Report failure for retry
+                    batch_item_failures.append({
+                        "itemIdentifier": record['messageId']
+                    })
+            
+            # Return batch item failures for SQS to retry
+            return {
+                'batchItemFailures': batch_item_failures
+            }
+        else:
+            # Direct invocation
+            url = event['url']
+            result = process_news_url(url)
+            return result
+        
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'message': 'Error collecting news content',
+                'error': str(e)
+            })
+        }
+
+
+def process_news_url(url):
+    """
+    Process a single news URL: fetch content and create batch analysis request
+    """
+    try:
 
         response = news_table.get_item(Key={'url': url})
         if 'Item' not in response:

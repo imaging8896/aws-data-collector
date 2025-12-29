@@ -56,9 +56,9 @@ resource "aws_lambda_function" "data_collector" {
 
   environment {
     variables = {
-      DYNAMODB_TABLE_NAME       = aws_dynamodb_table.news_urls_table.name
-      ENVIRONMENT               = var.environment
-      CONTENT_COLLECTOR_LAMBDA  = aws_lambda_function.content_collector.function_name
+      DYNAMODB_TABLE_NAME = aws_dynamodb_table.news_urls_table.name
+      ENVIRONMENT         = var.environment
+      SQS_QUEUE_URL       = aws_sqs_queue.news_content_queue.url
     }
   }
 

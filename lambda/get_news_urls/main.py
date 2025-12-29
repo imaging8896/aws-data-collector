@@ -4,14 +4,15 @@ import boto3
 from datetime import datetime
 from open_news import google
 
-# Initialize DynamoDB client
+# Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')  # type: ignore
-table_name = os.environ['DYNAMODB_TABLE_NAME']
-table = dynamodb.Table(table_name)  # type: ignore
+sqs_client = boto3.client('sqs')
 
-# Initialize Lambda client for invoking content collector
-lambda_client = boto3.client('lambda')
-content_collector_function = os.environ['CONTENT_COLLECTOR_LAMBDA']
+# Environment variables
+table_name = os.environ['DYNAMODB_TABLE_NAME']
+sqs_queue_url = os.environ['SQS_QUEUE_URL']
+
+table = dynamodb.Table(table_name)  # type: ignore
 
 category_tw_topic_finance_id = "CAAqJQgKIh9DQkFTRVFvSUwyMHZNREpmTjNRU0JYcG9MVlJYS0FBUAE"
 category_tw_topic_business_id = "CAAqKggKIiRDQkFTRlFvSUwyMHZNRGx6TVdZU0JYcG9MVlJYR2dKVVZ5Z0FQAQ"
@@ -76,16 +77,25 @@ def handler(event, context):
                 stored_count += 1
                 stored_urls.append(article.url)
                 
-                # Trigger content collector Lambda for this URL
+                # Send message to SQS queue for content collection
                 try:
-                    lambda_client.invoke(
-                        FunctionName=content_collector_function,
-                        InvocationType='Event',  # Async invocation
-                        Payload=json.dumps({'url': article.url})
+                    sqs_client.send_message(
+                        QueueUrl=sqs_queue_url,
+                        MessageBody=json.dumps({'url': article.url}),
+                        MessageAttributes={
+                            'url': {
+                                'StringValue': article.url,
+                                'DataType': 'String'
+                            },
+                            'title': {
+                                'StringValue': article.title,
+                                'DataType': 'String'
+                            }
+                        }
                     )
-                    print(f"Triggered content collection for: {article.url}")
-                except Exception as invoke_error:
-                    print(f"Error invoking content collector for {article.url}: {str(invoke_error)}")
+                    print(f"Queued content collection for: {article.url}")
+                except Exception as sqs_error:
+                    print(f"Error queueing content collection for {article.url}: {str(sqs_error)}")
             
             print(f"Stored {stored_count} new URLs: {stored_urls}")
             return {
