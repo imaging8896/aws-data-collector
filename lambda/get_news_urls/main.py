@@ -23,12 +23,15 @@ VALID_SOURCE_DOMAINS = {
     # "tw.news.yahoo.com", # Worked but need review
     # "www.gvm.com.tw", # 遠見雜誌
     # "wantrich.chinatimes.com", # 中時旺得富
+    # "www.chinatimes.com", # 中時新聞網
     # "www.cmoney.tw",
     # "www.storm.mg", # 風傳媒
+    # "vip.udn.com", # 聯合新聞網 VIP 會員專區
     # https://news.pts.org.tw/video/15379 # 公視新聞
-    # "money.udn.com", # 經濟日報 但沒有 article tag
-    # "finance.ettoday.net",
-    "news.cnyes.com",
+    # "money.udn.com", # 經濟日報 但沒有 article tag, house.udn.com
+    # "news.ustv.com.tw", 非凡
+    "finance.ettoday.net", # speed.ettoday.net, ai.ettoday.net, house.ettoday.net
+    "news.cnyes.com", # hao.cnyes.com
     "www.moneydj.com", 
     "www.ctee.com.tw",
 }
