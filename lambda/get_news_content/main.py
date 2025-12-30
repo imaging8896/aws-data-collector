@@ -14,11 +14,13 @@ from request import request_get_news
 # Initialize DynamoDB client
 dynamodb = boto3.resource('dynamodb')  # type: ignore
 news_table_name = os.environ['DYNAMODB_TABLE_NAME']
+batch_table_name = os.environ['DYNAMODB_BATCH_TABLE_NAME']
 news_table = dynamodb.Table(news_table_name)  # type: ignore
+batch_table = dynamodb.Table(batch_table_name)  # type: ignore
 
 # Initialize Secrets Manager client
 secrets_client = boto3.client('secretsmanager')
-# gemini_secret_name = os.environ['GEMINI_API_KEY_SECRET_NAME']
+gemini_secret_name = os.environ['GEMINI_API_KEY_SECRET_NAME']
 
 # Cache Gemini client
 _gemini_client = None
@@ -27,9 +29,8 @@ def get_gemini_client():
     global _gemini_client
     if _gemini_client is None:
         # Retrieve Gemini API key from Secrets Manager
-        # secret_response = secrets_client.get_secret_value(SecretId=gemini_secret_name)
-        # api_key = secret_response['SecretString']
-        api_key = "AIzaSyCfkmKhYKKsEF-Sstr9OdpU0N2zcNSyxmo"
+        secret_response = secrets_client.get_secret_value(SecretId=gemini_secret_name)
+        api_key = secret_response['SecretString']
         _gemini_client = genai.Client(api_key=api_key)
     return _gemini_client
 
@@ -126,24 +127,13 @@ def process_news_url(url):
 
         print(f"News content updated for URL: {actual_news_url}")
         
-        # Analyze with Gemini immediately
-        analysis_result = analyze_with_gemini(data['title'], news_content)
-        
-        # Update analysis in DynamoDB
-        news_table.update_item(
-            Key={'url': actual_news_url},
-            UpdateExpression='SET analysis = :analysis, analysis_updated_at = :updated_at',
-            ExpressionAttributeValues={
-                ':analysis': analysis_result,
-                ':updated_at': int(datetime.now().timestamp())
-            }
-        )
-        print(f"Analysis completed for URL: {actual_news_url}")
+        # Submit batch job to Gemini
+        submit_gemini_batch(actual_news_url, data['title'], news_content)
             
         return {
             'statusCode': 200,
             'body': json.dumps({
-                'message': 'News content collected and analyzed',
+                'message': 'News content collected and batch job submitted',
                 'url': actual_news_url
             })
         }
@@ -171,9 +161,9 @@ def get_news_content(url: str, mobile: bool = True, desktop: bool = True):
     return parser.content, news_url
 
 
-def analyze_with_gemini(title: str, content: str) -> dict:
+def submit_gemini_batch(news_url: str, title: str, content: str):
     """
-    Analyze news with Gemini 3.0 Pro Thinking Mode
+    Submit batch request to Gemini
     """
     client = get_gemini_client()
     
@@ -198,54 +188,64 @@ JSON 格式要求：
 新聞標題: {title}
 新聞內容: {content}
 
-
 請嚴格按照上述 JSON 格式回應，不要包含任何額外的文字說明。
 """
     
+    # Create request object for Batch API
+    # The format for Gemini Batch API input file (JSONL)
+    request_body = {
+        "request": {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": prompt}
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "thinking_config": {
+                    "thinking_level": "HIGH" # MEDIUM, LOW
+                },
+                "responseMimeType": "application/json",
+                "temperature": 0.7
+            }
+        }
+    }
+    
+    # Create temporary JSONL file
+    file_path = f"/tmp/{os.path.basename(news_url)}.jsonl"
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(json.dumps(request_body) + '\n')
+        
     try:
-        response = client.models.generate_content(
-            model='gemini-3-pro-preview',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                thinking_config=types.ThinkingConfig(
-                    # Use HIGH for the most in-depth reasoning; LOW is also available
-                    thinking_level=types.ThinkingLevel.HIGH
-                ),
-                temperature=0.7,
-                response_mime_type='application/json'
-            )
+        # Upload file to Gemini
+        # Note: client.files.upload takes 'file' argument which is the path
+        upload_file = client.files.upload(
+            file=file_path,
+            config={'mime_type': 'application/jsonl'}
         )
         
-        # Parse JSON response
-        analysis = json.loads(response.text)
+        # Create batch job
+        # model should be the model name
+        batch_job = client.batches.create(
+            model='gemini-3-flash-preview',
+            src=upload_file.name
+        )
         
-        # Validate required fields
-        if 'industries' not in analysis or 'genre' not in analysis:
-            raise ValueError("Missing required fields in Gemini response")
+        # Store batch ID in DynamoDB
+        batch_table.put_item(Item={
+            'batch_id': batch_job.name,
+            'url': news_url,
+            'created_at': int(datetime.now().timestamp()),
+            'status': 'PENDING'
+        })
         
-        # Validate industries structure
-        for industry in analysis['industries']:
-            if 'domain' not in industry or 'impact_score' not in industry or 'reason' not in industry:
-                raise ValueError("Invalid industry structure in Gemini response")
-            if not isinstance(industry['impact_score'], int) or not (-5 <= industry['impact_score'] <= 5):
-                raise ValueError(f"Invalid impact_score: {industry['impact_score']}")
+        print(f"Created Gemini batch job: {batch_job.name}")
         
-        return analysis
-        
-    except json.JSONDecodeError as e:
-        print(f"Failed to parse Gemini response as JSON: {e}")
-        print(f"Response text: {response.text}")
-        raise ValueError(f"Invalid JSON response from Gemini: {e}")
     except Exception as e:
-        print(f"Error calling Gemini API: {e}")
+        print(f"Error submitting batch job: {e}")
         raise
-
-
-if __name__ == "__main__":
-    import sys
-
-
-    test_event = {
-        "url": sys.argv[1]
-    }
-    print(handler(test_event, None))
+    finally:
+        # Clean up temp file
+        if os.path.exists(file_path):
+            os.remove(file_path)
