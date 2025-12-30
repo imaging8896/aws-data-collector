@@ -21,6 +21,7 @@ VALID_SOURCE_DOMAINS = {
     # "www.upmedia.mg", # Verified can't get news content e.g. https://www.upmedia.mg/tw/lifestyle/food/247791
     # "tw.stock.yahoo.com", # Worked but need review
     # "tw.news.yahoo.com", # Worked but need review
+    "finance.ettoday.net"
     "news.cnyes.com",
     "www.moneydj.com", 
     "www.ctee.com.tw",
@@ -49,6 +50,7 @@ def handler(event, context):
                 x for x in news_articles 
                 if _get_domain(x.url) in VALID_SOURCE_DOMAINS 
                 and (_get_domain(x.url) != "www.moneydj.com" or _get_first_path(x.url).lower() == "kmdj") # There is 'funddj' 基金網，我們不取用
+                and (_get_domain(x.url) != "finance.ettoday.net" or _get_first_path(x.url).lower() == "amp") # https://finance.ettoday.net/news/3089355 這種不符合格式
             ]
                 
             stored_count = 0
@@ -61,6 +63,9 @@ def handler(event, context):
                     'publish_time': int(article.publish_time.timestamp()) if article.publish_time else None,
                     'timestamp': int(datetime.now().timestamp()),
                 }
+
+                if _get_domain(article.url) == "www.ctee.com.tw" and "一分鐘強弱勢股" in article.title:
+                    continue
                 
                 # Put item in DynamoDB
                 # Check if URL already exists in DynamoDB
