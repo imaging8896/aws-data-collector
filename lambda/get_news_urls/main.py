@@ -56,12 +56,13 @@ def handler(event, context):
             stored_count = 0
             stored_urls = []
             for article in news_articles:
+                now = datetime.now()
                 item = {
                     'url': article.url,  # URL as primary key
                     'title': article.title,
                     'story_url': article.story_url if article.story_url else None,
-                    'publish_time': int(article.publish_time.timestamp()) if article.publish_time else None,
-                    'timestamp': int(datetime.now().timestamp()),
+                    'publish_time': int(article.publish_time.timestamp()) if article.publish_time else int(now.timestamp()),
+                    'timestamp': int(now.timestamp()),
                 }
 
                 if _get_domain(article.url) == "www.ctee.com.tw" and "一分鐘強弱勢股" in article.title:
