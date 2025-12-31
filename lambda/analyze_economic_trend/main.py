@@ -67,10 +67,10 @@ def handler(event, context):
             'news_items': []
         })
         
-        # Scan DynamoDB table with filter for timestamp and analysis
+        # Scan DynamoDB table with filter for publish_time and analysis
         response = news_table.scan(
-            FilterExpression='#ts > :start_ts AND attribute_exists(analysis)',
-            ExpressionAttributeNames={'#ts': 'timestamp'},
+            FilterExpression='#pt > :start_ts AND attribute_exists(analysis)',
+            ExpressionAttributeNames={'#pt': 'publish_time'},
             ExpressionAttributeValues={':start_ts': start_timestamp}
         )
         
@@ -79,8 +79,8 @@ def handler(event, context):
         # Handle pagination
         while 'LastEvaluatedKey' in response:
             response = news_table.scan(
-                FilterExpression='#ts > :start_ts AND attribute_exists(analysis)',
-                ExpressionAttributeNames={'#ts': 'timestamp'},
+                FilterExpression='#pt > :start_ts AND attribute_exists(analysis)',
+                ExpressionAttributeNames={'#pt': 'publish_time'},
                 ExpressionAttributeValues={':start_ts': start_timestamp},
                 ExclusiveStartKey=response['LastEvaluatedKey']
             )
@@ -90,7 +90,7 @@ def handler(event, context):
         
         # Process each news item
         for item in items:
-            timestamp = int(item['timestamp'])
+            timestamp = int(item.get('publish_time', item.get('timestamp', 0)))
             date = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d')
             analysis = item.get('analysis', {})
             
