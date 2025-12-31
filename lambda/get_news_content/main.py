@@ -1,5 +1,6 @@
 import json
 import os
+import traceback
 
 from datetime import datetime
 from google import genai
@@ -105,9 +106,11 @@ def process_news_url(url):
                 print(f"Deleted URL due to 404 Not Found: {url}")
                 return
             # Leave it in the DB
-            raise ValueError(f"Failed to get news content for {url}: RequestException") from e
+            traceback.print_exc()
+            raise ValueError(f"Failed to get news content for {url}: {e}")
         except Exception as content_error:
             # Leave it in the DB
+            traceback.print_exc()
             raise ValueError(f"Failed to get news content for {url}: {str(content_error)}")
         
         if not news_content:
