@@ -185,17 +185,37 @@ def submit_gemini_batch(news_url: str, title: str, content: str):
 
 JSON 格式要求：
 {{
-    "industries": [
+    "importance_score": 0.6,  // 整體重要性評分 (0到1，0為非常不重要，1為非常重要)
+    "market_sentiment": {{
+        "overall_mood": "新聞整體情緒 (正面、負面、中立)",
+        "score": 0.2,  // 情緒分數 (-1到1，-1為非常負面，1為非常正面)
+        "volatility_trigger": false  // 是否可能引發市場劇烈波動 (true或false) 
+    }},
+    "sector_rotation": [
         {{
-            "domain": "具體產業領域名稱(例如: CoWoS, 散熱模組, 生成式AI)",
-            "category": "請務必從以下清單中選擇最合適的一個分類：{', '.join(categories)}",
-            "impact_score": 2,  // 對該產業的影響評分 (-5 到 5，-5為非常負面，5為非常正面)
-            "reason": "影響原因和評分理由"
+            "sector": "請務必從以下清單中選擇最合適的一個分類：{', '.join(categories)}",
+            "sub_sector": "具體產業領域名稱(例如: CoWoS, 散熱模組, 生成式AI)",
+            "trend": "資金流動的趨勢 (流入、流出、持平)",
+            "keyword": "資金流動理由"
         }}
     ],
-    "type": "新聞類型 (例如: 政策、營收、技術、成本、併購、市場趨勢等)",
-    "genre": "新聞體裁(例如: 報導、評論、公告等)",
-    "summary": "簡短摘要 (50字以內)"
+    "entities_mentioned": [
+        {{
+            "name": "公司或組織名稱",
+            "id": "如有可提供的股票代碼或識別碼否則null",
+            "sentiment_score": 0.3,  // 該實體在新聞中的情緒分數 (-1到1，-1為非常負面，1為非常正面)
+            "event": "催化劑事件 (如有)",
+            "role": "leader or laggard"  // 該實體在產業中的角色 (leader或laggard)
+        }}
+    ],
+    "institutional_investor_behavior": {{
+        "action": "買超 or 賣超",  // 三大法人在新聞中的操作行為
+        "reason": "操作原因或背景說明",
+        "target_sectors": [
+            "請務必從以下清單中選擇最合適的一個分類：{', '.join(categories)}"
+        ]
+    }},
+    "investment_themes": ["COWOS", "生成式AI"]  // 根據新聞內容提取的投資主題清單(sub-sectors)
 }}
 
 新聞標題: {title}

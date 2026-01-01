@@ -1,3 +1,4 @@
+import decimal
 import json
 import os
 import boto3
@@ -143,7 +144,7 @@ def handler(event, context):
                                     clean_text = clean_text[:-3]
                             
                             clean_text = clean_text.strip()
-                            analysis = json.loads(clean_text)
+                            analysis = json.loads(clean_text, parse_float=decimal.Decimal)
                             
                             # Update DynamoDB
                             news_table.update_item(
