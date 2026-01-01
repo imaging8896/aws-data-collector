@@ -12,6 +12,13 @@ import curl_cffi
 from parser.general import GeneralNewsHTMLParser
 from request import request_get_news
 
+categories = [
+    "半導體與晶片", "AI與伺服器", "電子零組件與散熱", "電動車與車用電子", 
+    "網通與光通訊", "機器人與自動化", "金融", "消費性電子", 
+    "能源與重電", "房地產與營建", "生技醫療", "航運與物流", 
+    "原物料與鋼鐵", "其他"
+]
+
 # Initialize DynamoDB client
 dynamodb = boto3.resource('dynamodb')  # type: ignore
 news_table_name = os.environ['DYNAMODB_TABLE_NAME']
@@ -180,12 +187,15 @@ JSON 格式要求：
 {{
     "industries": [
         {{
-            "domain": "產業領域名稱，例如: 半導體、電動車、金融、零售等",
-            "impact_score": 2,  // Integer -5 to 5
-            "reason": "影響原因，請條列說明評分理由"
+            "domain": "具體產業領域名稱(例如: CoWoS, 散熱模組, 生成式AI)",
+            "category": "請務必從以下清單中選擇最合適的一個分類：{', '.join(categories)}",
+            "impact_score": 2,  // 對該產業的影響評分 (-5 到 5，-5為非常負面，5為非常正面)
+            "reason": "影響原因和評分理由"
         }}
     ],
-    "genre": "新聞體裁(例如:快訊、深度報導、分析評論、財報、公告等)"
+    "type": "新聞類型 (例如: 政策、營收、技術、成本、併購、市場趨勢等)",
+    "genre": "新聞體裁(例如: 報導、評論、公告等)",
+    "summary": "簡短摘要 (50字以內)"
 }}
 
 新聞標題: {title}

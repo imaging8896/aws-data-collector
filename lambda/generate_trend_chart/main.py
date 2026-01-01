@@ -217,7 +217,7 @@ def generate_chart(trend_data, summary, days):
         ax3 = plt.subplot(3, 2, 3)
         top_industries = summary.get('trending_industries', [])[:10]
         if top_industries:
-            industries = [ind['domain'] for ind in top_industries]
+            industries = [ind['category'] for ind in top_industries]
             industry_impacts = [ind['average_impact'] for ind in top_industries]
             colors = ['#06D6A0' if x > 0 else '#EF476F' for x in industry_impacts]
             
@@ -241,7 +241,7 @@ def generate_chart(trend_data, summary, days):
         ax5 = plt.subplot(3, 2, 5)
         
         # Get top 5 industries overall
-        top_5_industries = [ind['domain'] for ind in summary.get('trending_industries', [])[:5]]
+        top_5_industries = [ind['category'] for ind in summary.get('trending_industries', [])[:5]]
         
         if top_5_industries:
             # Create matrix for heatmap
@@ -249,7 +249,11 @@ def generate_chart(trend_data, summary, days):
             for industry in top_5_industries:
                 industry_trend = []
                 for day_data in trend_data:
-                    impact = day_data['industries'].get(industry, {}).get('average_impact', 0)
+                    day_industry = day_data['industries'].get(industry, {})
+                    impact = 0
+                    if day_industry.get("count", 0) > 0:
+                        impact = day_industry["total_impact"] / day_industry["count"]
+
                     # Convert Decimal to float for matplotlib
                     industry_trend.append(float(impact) if isinstance(impact, Decimal) else impact)
                 heatmap_data.append(industry_trend)
@@ -277,7 +281,7 @@ def generate_chart(trend_data, summary, days):
         """
         
         for i, ind in enumerate(summary.get('trending_industries', [])[:3], 1):
-            summary_text += f"\n{i}. {ind['domain']}: {ind['average_impact']:.2f} ({ind['mentions']}則)"
+            summary_text += f"\n{i}. {ind['category']}: {ind['average_impact']:.2f} ({ind['mentions']}則)"
         
         ax6.text(0.1, 0.5, summary_text, fontsize=12, verticalalignment='center',
                 bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))

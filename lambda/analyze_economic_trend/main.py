@@ -17,8 +17,9 @@ def decimal_default(obj):
     """JSON serializer for Decimal objects"""
     if isinstance(obj, Decimal):
         return float(obj)
-    raise TypeError
-
+    if isinstance(obj, set):
+        return list(obj)
+    return
 
 def handler(event, context):
     """
@@ -63,7 +64,7 @@ def handler(event, context):
             'positive': 0,
             'negative': 0,
             'neutral': 0,
-            'industries': defaultdict(lambda: {'total_impact': 0, 'count': 0}),
+            'industries': defaultdict(lambda: {'total_impact': 0, 'count': 0, 'domains': set()}),
             'news_items': []
         })
         
@@ -101,7 +102,7 @@ def handler(event, context):
             
             # Calculate overall impact for this news
             if industries:
-                news_impact = sum(ind.get('impact_score', 0) for ind in industries) / len(industries)
+                news_impact = sum(ind['impact_score'] for ind in industries) / len(industries)
                 
                 daily_data[date]['total_impact'] += news_impact
                 daily_data[date]['count'] += 1
@@ -116,17 +117,19 @@ def handler(event, context):
                 
                 # Process industry-specific impacts
                 for industry in industries:
-                    domain = industry.get('domain', 'Unknown')
-                    impact = industry.get('impact_score', 0)
+                    category = industry["category"]
+                    impact = industry["impact_score"]
                     
-                    daily_data[date]['industries'][domain]['total_impact'] += impact
-                    daily_data[date]['industries'][domain]['count'] += 1
+                    daily_data[date]['industries'][category]['total_impact'] += impact
+                    daily_data[date]['industries'][category]['count'] += 1
+                    daily_data[date]['industries'][category]['domains'].add(industry['domain'])
                 
                 # Store news summary
                 daily_data[date]['news_items'].append({
-                    'url': item.get('url', ''),
+                    'url': item['url'],
                     'title': item.get('title', ''),
                     'impact': Decimal(str(float(news_impact))),
+                    'type': analysis.get('type', ''),
                     'genre': analysis.get('genre', '')
                 })
         
@@ -143,17 +146,18 @@ def handler(event, context):
             
             # Process industries
             industries_summary = {}
-            for domain, ind_data in data['industries'].items():
+            for category, ind_data in data['industries'].items():
                 if ind_data['count'] > 0:
-                    industries_summary[domain] = {
-                        'average_impact': Decimal(str(round(ind_data['total_impact'] / ind_data['count'], 2))),
-                        'count': ind_data['count']
+                    industries_summary[category] = {
+                        'total_impact': ind_data['total_impact'],
+                        'count': ind_data['count'],
+                        'domains': ind_data['domains'],
                     }
             
             # Sort industries by average impact
             industries_summary = dict(sorted(
                 industries_summary.items(),
-                key=lambda x: x[1]['average_impact'],
+                key=lambda x: abs(x[1]['total_impact'] / x[1]['count']),
                 reverse=True
             ))
             
@@ -174,19 +178,23 @@ def handler(event, context):
             total_news = sum(d['total_news'] for d in trend_data)
             
             # Identify trending industries
-            all_industries = defaultdict(lambda: {'total_impact': 0, 'count': 0})
+            all_industries = defaultdict(lambda: {'total_impact': 0, 'count': 0, 'domains': set()})
             for day_data in trend_data:
-                for domain, ind_data in day_data['industries'].items():
-                    all_industries[domain]['total_impact'] += ind_data['average_impact'] * ind_data['count']
-                    all_industries[domain]['count'] += ind_data['count']
+                for category, ind_data in day_data['industries'].items():
+                    all_industries[category]['total_impact'] += ind_data['total_impact']
+                    all_industries[category]['count'] += ind_data['count']
+                    all_industries[category]['domains'].update(ind_data['domains'])
             
+            # Calculate trending industry groups
             trending_industries = []
-            for domain, ind_data in all_industries.items():
-                if ind_data['count'] > 0:
+            for category, group_data in all_industries.items():
+                if group_data['count'] > 0:
+                    avg_impact = group_data['total_impact'] / group_data['count']
                     trending_industries.append({
-                        'domain': domain,
-                        'average_impact': Decimal(str(round(ind_data['total_impact'] / ind_data['count'], 2))),
-                        'mentions': ind_data['count']
+                        'category': category,
+                        'domains': group_data['domains'],
+                        'average_impact': Decimal(str(round(avg_impact, 2))),
+                        'mentions': group_data['count']
                     })
             
             trending_industries = sorted(trending_industries, key=lambda x: abs(x['average_impact']), reverse=True)
@@ -263,7 +271,7 @@ def save_trend_data(trend_data, summary, days):
 if __name__ == "__main__":
     # For local testing
     test_event = {
-        "days": 7
+        "days": 14
     }
     result = handler(test_event, None)
     print(json.dumps(json.loads(result['body']), indent=2, ensure_ascii=False))

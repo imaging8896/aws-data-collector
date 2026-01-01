@@ -187,14 +187,14 @@ def generate_html(trend_id, trend_data, summary, days, chart_url):
     # Build industry table rows
     industry_rows = ""
     for i, ind in enumerate(trending_industries, 1):
-        domain = ind.get('domain', 'N/A')
+        category = ind.get('category', 'N/A')
         avg_impact = ind.get('average_impact', 0)
         mentions = ind.get('mentions', 0)
         impact_class = 'positive' if avg_impact > 0 else 'negative' if avg_impact < 0 else 'neutral'
         industry_rows += f"""
         <tr>
             <td>{i}</td>
-            <td>{domain}</td>
+            <td>{category}</td>
             <td class="{impact_class}">{avg_impact:.2f}</td>
             <td>{mentions}</td>
         </tr>
