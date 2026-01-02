@@ -62,6 +62,7 @@ layer_numpy/
 lambda_matplotlib_layer.zip
 layer_matplotlib/
 lambda_static_website_function.zip
+lambda_aggregate_stats_function.zip
 lambda/**/*.ttf
 
 # Python cache files

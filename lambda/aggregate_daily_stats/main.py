@@ -102,7 +102,7 @@ def aggregate_by_date(items):
         'institutional_behavior': defaultdict(lambda: {'buy': 0, 'sell': 0}),
         'sentiment': {'positive': 0, 'negative': 0, 'neutral': 0, 'scores': []},
         'keywords': [],
-        'stocks': defaultdict(lambda: {'mentions': 0, 'sentiment': 0, 'events': []})
+        'stocks': defaultdict(lambda: {'name': '', 'mentions': 0, 'sentiment': 0, 'events': []})
     })
     
     for item in items:
@@ -169,7 +169,10 @@ def aggregate_by_date(items):
             event = entity['event']
             
             if stock_id:
-                key = f"{stock_id}:{stock_name}"
+                key = stock_id
+                if "." in key:
+                    key = key.split(".")[0]
+                daily_stats[date]['stocks'][key]['name'] = stock_name
                 daily_stats[date]['stocks'][key]['mentions'] += 1
                 daily_stats[date]['stocks'][key]['sentiment'] += sentiment_score
                 if event:
@@ -218,6 +221,7 @@ def save_daily_stats(date, stats):
         # Convert stocks data
         stocks = {
             key: {
+                'name': data['name'],
                 'mentions': Decimal(str(data['mentions'])),
                 'average_sentiment': Decimal(str(round(data['sentiment'] / data['mentions'], 4))) if data['mentions'] > 0 else Decimal('0'),
                 'events': data['events'][:10]  # Keep top 10 events
@@ -226,16 +230,39 @@ def save_daily_stats(date, stats):
         }
         
         # Put item to DynamoDB
-        stats_table.put_item(Item={
-            'date': date,
-            'updated_at': int(datetime.now().timestamp()),
-            'total_news': Decimal(str(stats['total_news'])),
-            'sector_rotation': sector_rotation,
-            'institutional_behavior': institutional_behavior,
-            'sentiment': sentiment,
-            'keywords': keywords,
-            'stocks': stocks
-        })
+        # Check if record exists
+        existing = stats_table.get_item(Key={'date': date})
+        
+        if 'Item' in existing:
+            # Update existing record
+            stats_table.update_item(
+            Key={'date': date},
+            UpdateExpression='SET updated_at = :updated_at, total_news = :total_news, '
+                     'sector_rotation = :sector_rotation, '
+                     'institutional_behavior = :institutional_behavior, '
+                     'sentiment = :sentiment, keywords = :keywords, stocks = :stocks',
+            ExpressionAttributeValues={
+                ':updated_at': int(datetime.now().timestamp()),
+                ':total_news': Decimal(str(stats['total_news'])),
+                ':sector_rotation': sector_rotation,
+                ':institutional_behavior': institutional_behavior,
+                ':sentiment': sentiment,
+                ':keywords': keywords,
+                ':stocks': stocks
+            }
+            )
+        else:
+            # Create new record
+            stats_table.put_item(Item={
+                'date': date,
+                'updated_at': int(datetime.now().timestamp()),
+                'total_news': Decimal(str(stats['total_news'])),
+                'sector_rotation': sector_rotation,
+                'institutional_behavior': institutional_behavior,
+                'sentiment': sentiment,
+                'keywords': keywords,
+                'stocks': stocks
+            })
         
         print(f"Saved statistics for {date}: {stats['total_news']} news items")
         
