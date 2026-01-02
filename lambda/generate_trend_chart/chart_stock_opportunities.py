@@ -69,12 +69,70 @@ def generate_stock_opportunities_chart(data):
             scatter = ax.scatter(mentions, sentiments, s=sizes, c=colors_scatter, 
                                alpha=0.6, edgecolors='black', linewidth=1)
             
-            # Add labels for top opportunities
-            for i, (name, x, y) in enumerate(zip(stock_names, mentions, sentiments)):
-                if y > 0.6 or x > 4:  # High sentiment or high mentions
-                    ax.annotate(name, (x, y), xytext=(5, 5), textcoords='offset points',
-                              fontsize=9, bbox=dict(boxstyle='round,pad=0.3', 
-                              facecolor='yellow', alpha=0.5))
+            # Group nearby stocks and add labels with collision avoidance
+            min_distance = 0.1  # Minimum distance to be considered "nearby"
+            
+            # Normalize data for distance calculation
+            x_range = max(mentions) - min(mentions) if max(mentions) != min(mentions) else 1
+            y_range = max(sentiments) - min(sentiments) if max(sentiments) != min(sentiments) else 1
+            
+            # Create clusters of nearby stocks
+            stock_data = list(zip(stock_names, mentions, sentiments))
+            clusters = []
+            used = set()
+            
+            for i, (name1, x1, y1) in enumerate(stock_data):
+                if i in used or not (y1 > 0.6 or x1 > 4):
+                    continue
+                
+                cluster = [(name1, x1, y1)]
+                used.add(i)
+                
+                # Find nearby stocks
+                for j, (name2, x2, y2) in enumerate(stock_data):
+                    if j in used or j == i:
+                        continue
+                    
+                    # Calculate normalized distance
+                    norm_dist = ((x1 - x2) / x_range) ** 2 + ((y1 - y2) / y_range) ** 2
+                    
+                    if norm_dist < min_distance ** 2:
+                        cluster.append((name2, x2, y2))
+                        used.add(j)
+                
+                clusters.append(cluster)
+            
+            # Add annotations for each cluster
+            for cluster in clusters:
+                # Use centroid of cluster for annotation position
+                avg_x = sum(x for _, x, _ in cluster) / len(cluster)
+                avg_y = sum(y for _, _, y in cluster) / len(cluster)
+                
+                # Create label text (combine names if multiple stocks in cluster)
+                if len(cluster) == 1:
+                    label_text = cluster[0][0]
+                else:
+                    # Show up to 3 stocks per cluster
+                    names = [name for name, _, _ in cluster]
+                    label_text = '\n'.join(names)
+                
+                # Determine text position based on quadrant to avoid overlap
+                xlim = ax.get_xlim()
+                ylim = ax.get_ylim()
+                offset_x = 10 if avg_x < (xlim[1] * 0.6) else -10
+                offset_y = 10 if avg_y < (ylim[1] * 0.6) else -10
+                ha = 'left' if offset_x > 0 else 'right'
+                va = 'bottom' if offset_y > 0 else 'top'
+                
+                ax.annotate(label_text, (avg_x, avg_y), 
+                          xytext=(offset_x, offset_y), 
+                          textcoords='offset points',
+                          fontsize=9 if len(cluster) == 1 else 8, 
+                          ha=ha, va=va,
+                          bbox=dict(boxstyle='round,pad=0.4', 
+                                   facecolor='yellow', alpha=0.8, edgecolor='black', linewidth=0.5),
+                          arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0.2', 
+                                        color='black', lw=1, alpha=0.7))
             
             ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5)
             ax.axhline(y=0.5, color='green', linestyle=':', alpha=0.3, label='正面情緒門檻')
