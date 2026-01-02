@@ -46,7 +46,9 @@ resource "aws_iam_role_policy" "lambda_dynamodb_policy" {
           aws_dynamodb_table.batch_requests_table.arn,
           "${aws_dynamodb_table.batch_requests_table.arn}/index/*",
           aws_dynamodb_table.economic_trends_table.arn,
-          "${aws_dynamodb_table.economic_trends_table.arn}/index/*"
+          "${aws_dynamodb_table.economic_trends_table.arn}/index/*",
+          aws_dynamodb_table.daily_stats_table.arn,
+          "${aws_dynamodb_table.daily_stats_table.arn}/index/*"
         ]
       }
     ]

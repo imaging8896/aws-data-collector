@@ -129,3 +129,43 @@ resource "aws_dynamodb_table" "economic_trends_table" {
     ManagedBy   = "Terraform"
   }
 }
+
+# DynamoDB Table for Daily Statistics (Aggregated Data)
+resource "aws_dynamodb_table" "daily_stats_table" {
+  name         = "${var.environment}-${var.project_name}-daily-stats"
+  billing_mode = var.dynamodb_billing_mode
+  hash_key     = "date"
+
+  attribute {
+    name = "date"
+    type = "S"
+  }
+
+  # GSI for querying by update time
+  global_secondary_index {
+    name            = "UpdatedAtIndex"
+    hash_key        = "updated_at"
+    projection_type = "ALL"
+  }
+
+  attribute {
+    name = "updated_at"
+    type = "N"
+  }
+
+  # Point-in-time recovery for data protection
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  # Server-side encryption
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
