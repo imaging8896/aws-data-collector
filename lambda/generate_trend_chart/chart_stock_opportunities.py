@@ -90,10 +90,10 @@ def generate_stock_opportunities_chart(data):
             # Add quadrant labels
             xlim = ax.get_xlim()
             ylim = ax.get_ylim()
-            ax.text(xlim[1]*0.9, ylim[1]*0.9, '高關注+正面\n💰投資機會', 
+            ax.text(xlim[1]*0.9, ylim[1]*0.9, '高關注+正面\n投資機會', 
                    ha='right', va='top', fontsize=11, 
                    bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.5))
-            ax.text(xlim[1]*0.9, ylim[0]*0.9, '高關注+負面\n⚠️風險警示', 
+            ax.text(xlim[1]*0.9, ylim[0]*0.9, '高關注+負面\n風險警示', 
                    ha='right', va='bottom', fontsize=11,
                    bbox=dict(boxstyle='round', facecolor='lightcoral', alpha=0.5))
         

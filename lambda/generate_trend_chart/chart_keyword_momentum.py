@@ -76,9 +76,9 @@ def generate_keyword_momentum_chart(data):
         # Add momentum indicators
         for i, (kw, momentum) in enumerate(zip(keywords, momentums)):
             if momentum > 0.5:
-                ax2.text(momentum, i, " 🔥", va='center', fontsize=12)
+                ax2.text(momentum, i, " ▲", va='center', fontsize=12, color='red', fontweight='bold')
             elif momentum < -0.5:
-                ax2.text(momentum, i, " ❄️", va='center', fontsize=12)
+                ax2.text(momentum, i, " ▼", va='center', fontsize=12, color='blue', fontweight='bold')
         
         plt.tight_layout()
         

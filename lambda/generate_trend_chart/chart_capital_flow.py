@@ -86,9 +86,18 @@ def generate_capital_flow_chart(data, categories):
         
         # Add signal indicator
         for i, (net, label) in enumerate(zip(sector_net, sector_labels)):
-            signal = "🟢 建倉" if net > 2 else "🔴 撤離" if net < -2 else ""
+            if net > 2:
+                signal = "[建倉]"
+                color = '#06D6A0'
+            elif net < -2:
+                signal = "[撤離]"
+                color = '#EF476F'
+            else:
+                signal = ""
+                color = 'black'
+            
             if signal:
-                ax2.text(net, i, f" {signal}", va='center', fontsize=10, fontweight='bold')
+                ax2.text(net, i, f" {signal}", va='center', fontsize=9, fontweight='bold', color=color)
         
         plt.tight_layout()
         
