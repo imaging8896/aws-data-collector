@@ -65,16 +65,20 @@ def handler(event, context):
         
         # Save to DynamoDB
         saved_count = 0
+        latest_date = None
         for date, stats in daily_stats.items():
             save_daily_stats(date, stats)
             saved_count += 1
+            if latest_date is None or date > latest_date:
+                latest_date = date
         
         return {
             'statusCode': 200,
             'body': json.dumps({
                 'message': 'Daily statistics aggregated successfully',
                 'days_processed': saved_count,
-                'total_news': len(items)
+                'total_news': len(items),
+                'date': latest_date  # Pass the latest date to chart generator
             }, default=decimal_default)
         }
         

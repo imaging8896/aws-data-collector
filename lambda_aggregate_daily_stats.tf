@@ -79,3 +79,23 @@ resource "aws_lambda_permission" "allow_eventbridge_aggregate_stats" {
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.aggregate_stats_schedule.arn
 }
+
+# Lambda Destination: Trigger chart generator on success
+resource "aws_lambda_function_event_invoke_config" "aggregate_stats_destination" {
+  function_name = aws_lambda_function.aggregate_stats.function_name
+
+  destination_config {
+    on_success {
+      destination = aws_lambda_function.chart_generator.arn
+    }
+  }
+}
+
+# Permission for aggregate_stats to invoke chart_generator
+resource "aws_lambda_permission" "aggregate_stats_invoke_chart_generator" {
+  statement_id  = "AllowExecutionFromAggregateStats"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.chart_generator.function_name
+  principal     = "lambda.amazonaws.com"
+  source_arn    = aws_lambda_function.aggregate_stats.arn
+}

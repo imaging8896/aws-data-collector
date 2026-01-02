@@ -118,10 +118,11 @@ resource "aws_lambda_function" "chart_generator" {
 
   environment {
     variables = {
-      DYNAMODB_TREND_TABLE_NAME = aws_dynamodb_table.economic_trends_table.name
+      DYNAMODB_STATS_TABLE_NAME = aws_dynamodb_table.daily_stats_table.name
       S3_CHART_BUCKET_NAME      = aws_s3_bucket.trend_charts.id
       ENVIRONMENT               = var.environment
       PROJECT_NAME              = var.project_name
+      CATEGORIES                = var.categories
     }
   }
 

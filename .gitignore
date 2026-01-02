@@ -70,3 +70,6 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# Other
+.DS_Store
