@@ -176,6 +176,8 @@ def aggregate_by_date(items):
                 key = stock_id
                 if "." in key:
                     key = key.split(".")[0]
+                if "-" in key:
+                    key = key.split("-")[0]
                 daily_stats[date]['stocks'][key]['name'] = stock_name
                 daily_stats[date]['stocks'][key]['mentions'] += 1
                 daily_stats[date]['stocks'][key]['sentiment'] += sentiment_score
