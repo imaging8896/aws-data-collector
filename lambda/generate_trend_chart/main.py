@@ -102,7 +102,7 @@ def handler(event, context):
             statistics_date = date.fromisoformat(item['date'])
 
             if statistics_date == latest_date:
-                existing_keys = set(item.get('chart_s3_keys', set()))
+                existing_keys = list(item.get('chart_s3_keys', []))
 
             sector_rotation_data[statistics_date] = item.get('sector_rotation', {})
             institutional_behavior_data[statistics_date] = item.get('institutional_behavior', {})
@@ -121,7 +121,7 @@ def handler(event, context):
             except Exception as e:
                 print(f"Failed to delete old chart {old_key}: {str(e)}")
         
-        existing_keys = set()
+        existing_keys = []
 
         stats_table.update_item(
             Key={'date': latest_date.isoformat()},
@@ -138,7 +138,7 @@ def handler(event, context):
             'chart_type': 'sector_rotation',
             'generated_at': datetime.now(tz_utc8).isoformat()
         })
-        existing_keys.add(s3_key)
+        existing_keys.append(s3_key)
 
         stats_table.update_item(
             Key={'date': latest_date.isoformat()},
@@ -146,7 +146,7 @@ def handler(event, context):
             ExpressionAttributeValues={
             ':sector_rotation_gen': True,
             ':ts': datetime.now(tz_utc8).isoformat(),
-            ':keys': list(existing_keys)
+            ':keys': existing_keys
             }
         )
 
@@ -159,7 +159,7 @@ def handler(event, context):
             'chart_type': 'capital_flow',
             'generated_at': datetime.now(tz_utc8).isoformat()
         })
-        existing_keys.add(s3_key)
+        existing_keys.append(s3_key)
 
         stats_table.update_item(
             Key={'date': latest_date.isoformat()},
@@ -167,7 +167,7 @@ def handler(event, context):
             ExpressionAttributeValues={
             ':capital_flow_gen': True,
             ':ts': datetime.now(tz_utc8).isoformat(),
-            ':keys': list(existing_keys)
+            ':keys': existing_keys
             }
         )
 
@@ -180,7 +180,7 @@ def handler(event, context):
             'chart_type': 'sentiment',
             'generated_at': datetime.now(tz_utc8).isoformat()
         })
-        existing_keys.add(s3_key)
+        existing_keys.append(s3_key)
 
         stats_table.update_item(
             Key={'date': latest_date.isoformat()},
@@ -188,7 +188,7 @@ def handler(event, context):
             ExpressionAttributeValues={
             ':sentiment_gen': True,
             ':ts': datetime.now(tz_utc8).isoformat(),
-            ':keys': list(existing_keys)
+            ':keys': existing_keys
             }
         )
         
@@ -201,7 +201,7 @@ def handler(event, context):
             'chart_type': 'keyword_momentum',
             'generated_at': datetime.now(tz_utc8).isoformat()
         })
-        existing_keys.add(s3_key)
+        existing_keys.append(s3_key)
 
         stats_table.update_item(
             Key={'date': latest_date.isoformat()},
@@ -209,7 +209,7 @@ def handler(event, context):
             ExpressionAttributeValues={
             ':keyword_momentum_gen': True,
             ':ts': datetime.now(tz_utc8).isoformat(),
-            ':keys': list(existing_keys)
+            ':keys': existing_keys
             }
         )
 
@@ -222,7 +222,7 @@ def handler(event, context):
             'chart_type': 'stock_opportunities',
             'generated_at': datetime.now(tz_utc8).isoformat()
         })
-        existing_keys.add(s3_key)
+        existing_keys.append(s3_key)
 
         stats_table.update_item(
             Key={'date': latest_date.isoformat()},
@@ -230,7 +230,7 @@ def handler(event, context):
             ExpressionAttributeValues={
             ':stock_opportunities_gen': True,
             ':ts': datetime.now(tz_utc8).isoformat(),
-            ':keys': list(existing_keys)
+            ':keys': existing_keys
             }
         )
 
