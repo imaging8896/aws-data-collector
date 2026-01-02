@@ -12,13 +12,6 @@ import curl_cffi
 from parser.general import GeneralNewsHTMLParser
 from request import request_get_news
 
-categories = [
-    "半導體與晶片", "AI與伺服器", "電子零組件與散熱", "電動車與車用電子", 
-    "網通與光通訊", "機器人與自動化", "金融", "消費性電子", 
-    "能源與重電", "房地產與營建", "生技醫療", "航運與物流", 
-    "原物料與鋼鐵", "其他"
-]
-
 # Initialize DynamoDB client
 dynamodb = boto3.resource('dynamodb')  # type: ignore
 news_table_name = os.environ['DYNAMODB_TABLE_NAME']
@@ -29,6 +22,8 @@ batch_table = dynamodb.Table(batch_table_name)  # type: ignore
 # Initialize Secrets Manager client
 secrets_client = boto3.client('secretsmanager')
 gemini_secret_name = os.environ['GEMINI_API_KEY_SECRET_NAME']
+
+categories = os.environ['CATEGORIES'].split(',')
 
 # Cache Gemini client
 _gemini_client = None
@@ -202,7 +197,7 @@ JSON 格式要求，請嚴格遵守，回應以下objec in Json：
     "entities_mentioned": [
         {{
             "name": "公司或組織名稱",
-            "id": "如有可提供的股票代碼或識別碼否則null",
+            "id": "公司對應台股代碼或是美股代碼(如有)，請嚴謹核對公司與代碼的對應關係",
             "sentiment_score": 0.3,  // 該實體在新聞中的情緒分數 (-1到1，-1為非常負面，1為非常正面)
             "event": "催化劑事件 (如有)",
             "role": "leader or laggard"  // 該實體在產業中的角色 (leader或laggard)
