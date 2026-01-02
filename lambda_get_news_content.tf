@@ -57,6 +57,7 @@ resource "aws_lambda_function" "content_collector" {
       DYNAMODB_BATCH_TABLE_NAME  = aws_dynamodb_table.batch_requests_table.name
       ENVIRONMENT                = var.environment
       GEMINI_API_KEY_SECRET_NAME = aws_secretsmanager_secret.gemini_api_key.name
+      CATEGORIES                 = var.categories
     }
   }
 

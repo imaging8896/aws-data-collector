@@ -39,3 +39,8 @@ variable "gemini_api_key" {
   type        = string
   sensitive   = true
 }
+
+variable "categories" {
+  description = "Categories for industry classification"
+  type        = string
+}
