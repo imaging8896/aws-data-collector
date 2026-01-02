@@ -198,13 +198,13 @@ terraform apply  # 部署 CloudFront
 ```bash
 # 觸發趨勢分析 (會自動生成圖表和網頁)
 aws lambda invoke \
-  --function-name dev-aws-data-collector-trend-analyzer \
+  --function-name dev-aws-data-collector-aggregate-stats \
   --invocation-type Event \
   --payload '{"days": 7}' \
   response.json
 
 # 等待 30-60 秒後，訪問 CloudFront URL
-https://<cloudfront-domain>/charts/trend-7d-YYYYMMDD-HHMMSS.html
+https://<cloudfront-domain>
 ```
 
 ### 注意事項

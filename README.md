@@ -88,15 +88,6 @@ aws lambda invoke \
   --payload '{"category_id":"CAAqJQgKIh9DQkFTRVFvSUwyMHZNREpmTjNRU0JYcG9MVlJYS0FBUAE"}' \
   response.json
 
-  # Trigger trend analyzer (async - will auto-trigger chart and website generation)
-aws lambda invoke \
-  --function-name dev-aws-data-collector-trend-analyzer \
-  --invocation-type Event \
-  --cli-binary-format raw-in-base64-out \
-  --payload '{"days": 14}' \
-  response.json
-```
-
 # Trigger chart generator (async invocation to enable Destinations)
 aws lambda invoke \
   --function-name dev-aws-data-collector-chart-generator \
