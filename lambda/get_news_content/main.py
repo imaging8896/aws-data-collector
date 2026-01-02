@@ -183,7 +183,7 @@ def submit_gemini_batch(news_url: str, title: str, content: str):
 1.直接影響產業: 新聞內容中提及的所有產業領域
 2.間接影響產業: 根據新聞內容推論可能受到影響的相關產業領域
 
-JSON 格式要求：
+JSON 格式要求，請嚴格遵守，回應以下objec in Json：
 {{
     "importance_score": 0.6,  // 整體重要性評分 (0到1，0為非常不重要，1為非常重要)
     "market_sentiment": {{
