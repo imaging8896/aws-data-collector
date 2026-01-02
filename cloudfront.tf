@@ -84,9 +84,9 @@ resource "aws_cloudfront_distribution" "trend_charts_cdn" {
     compress               = true
   }
 
-  # Cache behavior for images (longer TTL)
+  # Cache behavior for images (longer TTL since we use timestamped filenames)
   ordered_cache_behavior {
-    path_pattern     = "*.png"
+    path_pattern     = "charts/*/*.png"
     allowed_methods  = ["GET", "HEAD"]
     cached_methods   = ["GET", "HEAD"]
     target_origin_id = "S3-${aws_s3_bucket.trend_charts.id}"
@@ -100,9 +100,9 @@ resource "aws_cloudfront_distribution" "trend_charts_cdn" {
 
     viewer_protocol_policy = "redirect-to-https"
     min_ttl                = 0
-    default_ttl            = 86400   # 24 hours for images
-    max_ttl                = 604800  # 7 days
-    compress               = false   # PNG already compressed
+    default_ttl            = 2592000   # 30 days for timestamped images (immutable)
+    max_ttl                = 31536000  # 1 year
+    compress               = false     # PNG already compressed
   }
 
   restrictions {

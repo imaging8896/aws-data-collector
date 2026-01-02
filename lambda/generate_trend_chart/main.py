@@ -58,12 +58,12 @@ def handler(event, context):
             payload = event['responsePayload']
             if isinstance(payload, dict) and 'body' in payload:
                 body = json.loads(payload['body']) if isinstance(payload['body'], str) else payload['body']
-                days = body.get('days_processed', 7)
+                days = body.get('days', 14)
             else:
-                days = payload.get('days', 7)
+                days = payload.get('days', 14)
         else:
             # Direct invocation
-            days = int(event.get('days', 7))
+            days = int(event.get('days', 14))
 
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days + 1)
@@ -110,18 +110,29 @@ def handler(event, context):
             keywords_data[statistics_date] = item.get('keywords', [])
             stock_opportunities_data[statistics_date] = item.get('stocks', {})
 
+        tz_utc8 = timezone(timedelta(hours=8))
+        timestamp = int(datetime.now(tz_utc8).timestamp())
+        
+        # Delete old chart files to save S3 storage cost
+        for old_key in existing_keys:
+            try:
+                s3_client.delete_object(Bucket=s3_bucket_name, Key=old_key)
+                print(f"Deleted old chart: {old_key}")
+            except Exception as e:
+                print(f"Failed to delete old chart {old_key}: {str(e)}")
+        
+        existing_keys = set()
+
         stats_table.update_item(
             Key={'date': latest_date.isoformat()},
-            UpdateExpression='SET chart_s3_bucket = :bucket, days= :days',
-            ExpressionAttributeValues={':bucket': s3_bucket_name, ':days': days}
+            UpdateExpression='SET chart_s3_bucket = :bucket, days= :days, chart_s3_keys = :keys',
+            ExpressionAttributeValues={':bucket': s3_bucket_name, ':days': days, ':keys': list(existing_keys)}
         )
-
-        tz_utc8 = timezone(timedelta(hours=8))
 
         # 1. Generate sector rotation chart
         sector_rotation_chart_bytes = generate_sector_rotation_chart(sector_rotation_data, categories)
         
-        s3_key = f"charts/sector-rotation/{latest_date.isoformat()}.png"
+        s3_key = f"charts/sector-rotation/{latest_date.isoformat()}-{timestamp}.png"
         upload_chart_to_s3(sector_rotation_chart_bytes, s3_bucket_name, s3_key, {
             'date': latest_date.isoformat(),
             'chart_type': 'sector_rotation',
@@ -142,7 +153,7 @@ def handler(event, context):
         # 2. Generate capital flow chart
         capital_flow_chart_bytes = generate_capital_flow_chart(institutional_behavior_data, categories)
 
-        s3_key = f"charts/capital-flow/{latest_date.isoformat()}.png"
+        s3_key = f"charts/capital-flow/{latest_date.isoformat()}-{timestamp}.png"
         upload_chart_to_s3(capital_flow_chart_bytes, s3_bucket_name, s3_key, {
             'date': latest_date.isoformat(),
             'chart_type': 'capital_flow',
@@ -163,7 +174,7 @@ def handler(event, context):
         # 3. Generate sentiment chart
         sentiment_chart_bytes = generate_sentiment_chart(sentiment_data)
 
-        s3_key = f"charts/sentiment/{latest_date.isoformat()}.png"
+        s3_key = f"charts/sentiment/{latest_date.isoformat()}-{timestamp}.png"
         upload_chart_to_s3(sentiment_chart_bytes, s3_bucket_name, s3_key, {
             'date': latest_date.isoformat(),
             'chart_type': 'sentiment',
@@ -184,7 +195,7 @@ def handler(event, context):
         # 4. Generate keyword momentum chart
         keyword_momentum_chart_bytes = generate_keyword_momentum_chart(keywords_data)
 
-        s3_key = f"charts/keyword-momentum/{latest_date.isoformat()}.png"
+        s3_key = f"charts/keyword-momentum/{latest_date.isoformat()}-{timestamp}.png"
         upload_chart_to_s3(keyword_momentum_chart_bytes, s3_bucket_name, s3_key, {
             'date': latest_date.isoformat(),
             'chart_type': 'keyword_momentum',
@@ -205,7 +216,7 @@ def handler(event, context):
         # 5. Generate stock opportunities chart
         stock_opportunities_chart_bytes = generate_stock_opportunities_chart(stock_opportunities_data)
 
-        s3_key = f"charts/stock-opportunities/{latest_date.isoformat()}.png"
+        s3_key = f"charts/stock-opportunities/{latest_date.isoformat()}-{timestamp}.png"
         upload_chart_to_s3(stock_opportunities_chart_bytes, s3_bucket_name, s3_key, {
             'date': latest_date.isoformat(),
             'chart_type': 'stock_opportunities',
