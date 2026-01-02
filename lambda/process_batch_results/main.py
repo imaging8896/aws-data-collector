@@ -145,6 +145,8 @@ def handler(event, context):
                             
                             clean_text = clean_text.strip()
                             analysis = json.loads(clean_text, parse_float=decimal.Decimal)
+                            if isinstance(analysis, list):
+                                analysis = analysis[0]
                             
                             # Update DynamoDB
                             news_table.update_item(
