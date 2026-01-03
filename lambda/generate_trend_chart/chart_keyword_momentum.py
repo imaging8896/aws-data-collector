@@ -18,6 +18,7 @@ def generate_keyword_momentum_chart(data):
     try:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
         
+        data = filter_latest_day_not_enough_data(data)
         dates = list(sorted(data.keys()))
         days = len(dates)
         
@@ -136,3 +137,39 @@ def generate_keyword_momentum_chart(data):
         import traceback
         traceback.print_exc()
         return None
+
+
+def filter_latest_day_not_enough_data(data):
+    """
+    Filter out the latest day if it does not have enough keywords
+    """
+    # 1. 智慧過濾：檢測並排除資料不完整的最後一天 (避免趨勢驟減)
+    raw_dates = list(sorted(data.keys()))
+    daily_totals = defaultdict(int)
+    
+    for date in raw_dates:
+        keywords_list = data[date]
+        total = 0
+        if keywords_list:
+            if isinstance(keywords_list[0], dict):
+                total = sum(int(item.get('count', 1)) for item in keywords_list)
+            else:
+                total = len(keywords_list)
+        daily_totals[date] = total
+        
+    dates = raw_dates[:]
+    if len(dates) >= 2:
+        last_date = dates[-1]
+        last_total = daily_totals[last_date]
+        
+        # 計算前幾天的平均量 (取前 3 天)
+        prev_dates = dates[-4:-1] if len(dates) >= 4 else dates[:-1]
+        if prev_dates:
+            avg_prev = sum(daily_totals[d] for d in prev_dates) / len(prev_dates)
+            
+            # 如果最後一天的量低於平均的 70%，視為資料不完整並排除
+            if avg_prev > 0 and last_total < 0.7 * avg_prev:
+                print(f"Excluding incomplete date {last_date} from keyword chart (Count: {last_total}, Avg: {avg_prev:.1f})")
+                data.pop(last_date, None)
+    
+    return data
