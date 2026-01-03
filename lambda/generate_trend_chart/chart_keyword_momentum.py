@@ -8,7 +8,10 @@ def generate_keyword_momentum_chart(data):
     """
     圖表 4: 關鍵字動能 (投資主題熱度)
     {
-        "date1": ["keyword1", "keyword2", ...],
+        "date1": [
+            {"keyword": "AI", "count": 20, "related": ["AI供應鏈", "生成式AI", ...]},
+            ...
+        ],
         ...
     }
     """
@@ -18,28 +21,50 @@ def generate_keyword_momentum_chart(data):
         dates = list(sorted(data.keys()))
         days = len(dates)
         
-        # Aggregate all keywords
-        all_keywords = Counter()
+        # Aggregate all keywords with their counts
+        all_keywords_count = defaultdict(int)
         keyword_timeline = defaultdict(lambda: defaultdict(int))
+        keyword_related = {}  # Store related keywords for tooltip
         
         for date in dates:
-            for keyword in data[date]:
-                all_keywords[keyword] += 1
-                keyword_timeline[keyword][date] += 1
-        
+            keywords_list = data[date]
+            
+            # Handle both old format (list of strings) and new format (list of dicts)
+            if keywords_list and isinstance(keywords_list[0], dict):
+                # New format with refined keywords
+                for item in keywords_list:
+                    keyword = item['keyword']
+                    count = int(item.get('count', 1))
+                    related = item.get('related', [])
+                    
+                    all_keywords_count[keyword] += count
+                    keyword_timeline[keyword][date] += count
+                    keyword_related[keyword] = related
+            else:
+                # Old format fallback (simple list)
+                for keyword in keywords_list:
+                    all_keywords_count[keyword] += 1
+                    keyword_timeline[keyword][date] += 1
+
         # Chart 1: Top 15 Keywords Over Time
-        top_keywords = [kw for kw, _ in all_keywords.most_common(15)]
+        top_keywords = sorted(all_keywords_count.items(), key=lambda x: x[1], reverse=True)[:15]
+        top_keywords = [kw for kw, _ in top_keywords]
         
         for keyword in top_keywords:
             counts = [keyword_timeline[keyword][date] for date in dates]
-            ax1.plot(range(len(dates)), counts, marker='o', label=keyword, linewidth=2)
+            label = keyword
+            # Add related info if available
+            if keyword in keyword_related and keyword_related[keyword]:
+                related_preview = ', '.join(keyword_related[keyword][:2])
+                label = f"{keyword} ({related_preview}...)" if len(keyword_related[keyword]) > 2 else f"{keyword} ({related_preview})"
+            ax1.plot(range(len(dates)), counts, marker='o', label=label, linewidth=2, markersize=5)
         
-        ax1.set_title('熱門投資主題趨勢 (Top 15)', fontsize=14, fontweight='bold')
-        ax1.set_xlabel('日期')
-        ax1.set_ylabel('提及次數')
+        ax1.set_title(f'熱門投資主題趨勢 (Top 15, {days}天)', fontsize=14, fontweight='bold')
+        ax1.set_xlabel('日期', fontsize=11)
+        ax1.set_ylabel('提及次數', fontsize=11)
         ax1.set_xticks(range(len(dates)))
-        ax1.set_xticklabels(dates, rotation=45)
-        ax1.legend(loc='upper left', bbox_to_anchor=(1.05, 1), fontsize=9)
+        ax1.set_xticklabels(dates, rotation=45, ha='right')
+        ax1.legend(loc='upper left', bbox_to_anchor=(1.05, 1), fontsize=8)
         ax1.grid(True, alpha=0.3)
         
         # Chart 2: Keyword Momentum (Latest vs Previous)
@@ -65,20 +90,36 @@ def generate_keyword_momentum_chart(data):
         
         colors = ['#06D6A0' if m > 0 else '#EF476F' for m in momentums]
         
-        ax2.barh(range(len(keywords)), momentums, color=colors, alpha=0.8)
+        bars = ax2.barh(range(len(keywords)), momentums, color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
         ax2.set_yticks(range(len(keywords)))
-        ax2.set_yticklabels(keywords)
-        ax2.set_xlabel('動能變化 (近期-先前)')
+        ax2.set_yticklabels(keywords, fontsize=10)
+        ax2.set_xlabel('動能變化 (近期-先前)', fontsize=11)
         ax2.set_title('投資主題動能排行', fontsize=14, fontweight='bold')
-        ax2.axvline(x=0, color='black', linestyle='-', linewidth=0.5)
+        ax2.axvline(x=0, color='black', linestyle='-', linewidth=1)
         ax2.grid(True, alpha=0.3, axis='x')
         
-        # Add momentum indicators
+        # Add momentum indicators and value labels
+        xlim = ax2.get_xlim()
+        x_range = abs(xlim[1] - xlim[0])
+        
         for i, (kw, momentum) in enumerate(zip(keywords, momentums)):
+            # Momentum arrow (positioned further from bar end)
             if momentum > 0.5:
-                ax2.text(momentum, i, " ▲", va='center', fontsize=12, color='red', fontweight='bold')
+                arrow_x = momentum + x_range * 0.08
+                ax2.text(arrow_x, i, "▲", va='center', fontsize=12, color='red', fontweight='bold')
+                # Value label (closer to bar end)
+                ax2.text(momentum + x_range * 0.01, i, f' +{momentum:.1f}', va='center', fontsize=9, fontweight='bold')
             elif momentum < -0.5:
-                ax2.text(momentum, i, " ▼", va='center', fontsize=12, color='blue', fontweight='bold')
+                arrow_x = momentum - x_range * 0.08
+                ax2.text(arrow_x, i, "▼", va='center', ha='right', fontsize=12, color='blue', fontweight='bold')
+                # Value label (closer to bar end)
+                ax2.text(momentum - x_range * 0.01, i, f' {momentum:.1f}', va='center', ha='right', fontsize=9, fontweight='bold')
+            else:
+                # No arrow, just value label
+                if momentum > 0:
+                    ax2.text(momentum + x_range * 0.01, i, f' +{momentum:.1f}', va='center', fontsize=9, fontweight='bold')
+                else:
+                    ax2.text(momentum - x_range * 0.01, i, f' {momentum:.1f}', va='center', ha='right', fontsize=9, fontweight='bold')
         
         plt.tight_layout()
         

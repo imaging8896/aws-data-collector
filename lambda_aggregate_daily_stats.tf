@@ -8,6 +8,36 @@ data "archive_file" "lambda_aggregate_stats_zip" {
   excludes    = ["requirements.txt", "__pycache__"]
 }
 
+# Create Lambda Layer with google-genai dependency
+resource "terraform_data" "install_aggregate_stats_dependencies" {
+  triggers_replace = {
+    # Trigger rebuild when we add dependencies
+    version = "1"
+  }
+
+  provisioner "local-exec" {
+    command = <<EOT
+      rm -rf ${path.module}/layer_aggregate_stats || true
+      mkdir -p ${path.module}/layer_aggregate_stats/python
+      docker run --rm --platform linux/arm64 --entrypoint "" \
+        -v "$(pwd)/${path.module}/layer_aggregate_stats/python:/var/task" \
+        public.ecr.aws/lambda/python:${replace(var.lambda_runtime, "python", "")} \
+        pip install google-genai -t /var/task --upgrade
+      cd ${path.module}/layer_aggregate_stats && zip -r ../lambda_aggregate_stats_layer.zip python
+    EOT
+  }
+}
+
+resource "aws_lambda_layer_version" "aggregate_stats_dependencies_layer" {
+  filename                 = "${path.module}/lambda_aggregate_stats_layer.zip"
+  layer_name               = "${var.environment}-${var.project_name}-aggregate-stats-dependencies"
+  compatible_runtimes      = [var.lambda_runtime]
+  compatible_architectures = ["arm64"]
+  source_code_hash         = terraform_data.install_aggregate_stats_dependencies.id
+
+  depends_on = [terraform_data.install_aggregate_stats_dependencies]
+}
+
 # Lambda Function
 resource "aws_lambda_function" "aggregate_stats" {
   filename         = data.archive_file.lambda_aggregate_stats_zip.output_path
@@ -19,12 +49,14 @@ resource "aws_lambda_function" "aggregate_stats" {
   memory_size     = 128
   timeout         = 60
   architectures    = ["arm64"]
+  layers           = [aws_lambda_layer_version.aggregate_stats_dependencies_layer.arn]
 
   environment {
     variables = {
-      DYNAMODB_TABLE_NAME       = aws_dynamodb_table.news_urls_table.name
-      DYNAMODB_STATS_TABLE_NAME = aws_dynamodb_table.daily_stats_table.name
-      ENVIRONMENT               = var.environment
+      DYNAMODB_TABLE_NAME          = aws_dynamodb_table.news_urls_table.name
+      DYNAMODB_STATS_TABLE_NAME    = aws_dynamodb_table.daily_stats_table.name
+      GEMINI_API_KEY_SECRET_NAME   = aws_secretsmanager_secret.gemini_api_key.name
+      ENVIRONMENT                  = var.environment
     }
   }
 

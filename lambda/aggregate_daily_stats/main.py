@@ -2,15 +2,35 @@ import json
 import os
 from datetime import datetime, timedelta
 from decimal import Decimal
-from collections import defaultdict
+from collections import defaultdict, Counter
 import boto3
+from google import genai
+from google.genai import types
 
-# Initialize DynamoDB client
+# Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')
+secrets_client = boto3.client('secretsmanager')
+
 news_table_name = os.environ['DYNAMODB_TABLE_NAME']
 stats_table_name = os.environ['DYNAMODB_STATS_TABLE_NAME']
+gemini_secret_name = os.environ.get('GEMINI_API_KEY_SECRET_NAME')
+
 news_table = dynamodb.Table(news_table_name)
 stats_table = dynamodb.Table(stats_table_name)
+
+# Initialize Gemini client (lazy loading)
+_gemini_client = None
+
+def get_gemini_client():
+    global _gemini_client
+    if _gemini_client is None and gemini_secret_name:
+        try:
+            secret_response = secrets_client.get_secret_value(SecretId=gemini_secret_name)
+            api_key = secret_response['SecretString']
+            _gemini_client = genai.Client(api_key=api_key)
+        except Exception as e:
+            print(f"Failed to initialize Gemini client: {str(e)}")
+    return _gemini_client
 
 
 def decimal_default(obj):
@@ -18,6 +38,90 @@ def decimal_default(obj):
     if isinstance(obj, Decimal):
         return float(obj)
     raise TypeError
+
+
+def refine_keywords_with_ai(keywords_list):
+    """
+    Use AI to consolidate and categorize similar keywords
+    Returns refined list of keywords with counts
+    """
+    if not keywords_list or len(keywords_list) == 0:
+        return []
+    
+    client = get_gemini_client()
+    if not client:
+        # Fallback to simple counter if AI not available
+        counter = Counter(keywords_list)
+        return [{'keyword': k, 'count': v, 'related': [k]} for k, v in counter.most_common()]
+    
+    try:
+        keywords_str = ', '.join(list(set(keywords_list)))
+        
+        prompt = f"""分析以下投資關鍵字並整理成精煉的類別。請合併相似的關鍵字，並統計總次數。
+
+關鍵字列表:
+{keywords_str}
+
+請嚴格以 JSON 格式回傳整理後的結果，格式如下:
+{{
+  "refined_keywords": [
+    {{"keyword": "AI晶片", "origin_keywords": ["AI", "晶片", "GPU"]}},
+    {{"keyword": "電動車", "origin_keywords": ["EV", "特斯拉"]}}
+  ]
+}}
+
+規則:
+1. 關鍵字僅限於輸入的關鍵字列表
+2. 被合併的關鍵字將不再被合併到其他類別中
+3. 將非常相似的關鍵字合併，並從中選出最具代表性的名稱作為 keyword
+4. 移除 origin_keywords 只有一個關鍵字的結果
+5. origin_keywords 只列出合併前所有原始關鍵字
+6. 只返回 JSON，不要其他說明文字"""
+        
+        response = client.models.generate_content(
+            model='gemini-2.0-flash-lite',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.3,
+                # thinking_config=types.ThinkingConfig(
+                #     include_thoughts=False,
+                #     thinking_budget=2000, # 0 至 24576 or -1 for thinking until done
+                # )
+            )
+        )
+        
+        # Extract JSON from response
+        response_text = response.text.strip()
+        # Remove markdown code blocks if present
+        if response_text.startswith('```'):
+            response_text = response_text.split('\n', 1)[1]
+            response_text = response_text.rsplit('```', 1)[0]
+        
+        result = json.loads(response_text)
+        refined = result.get('refined_keywords', [])
+
+        counter = Counter(keywords_list)
+        raw_keyword_count = {k: v for k, v in counter.most_common()}
+
+        refined = [
+            {
+                'keyword': item['keyword'],
+                'count': sum(raw_keyword_count.get(k, 0) for k in set(item['origin_keywords'])),
+                'related': list(set(item['origin_keywords']))  # Remove duplicates in related
+            }
+            for item in refined
+        ]
+        
+        print(f"AI refined {len(keywords_list)} keywords into {len(refined)} categories")
+        return refined
+        
+    except Exception as e:
+        print(f"Error refining keywords with AI: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        # Fallback to simple counter
+        counter = Counter(keywords_list)
+        return [{'keyword': k, 'count': v} for k, v in counter.most_common(20)]
 
 
 def handler(event, context):
@@ -221,8 +325,10 @@ def save_daily_stats(date, stats):
             'average_score': Decimal(str(round(avg_sentiment, 4)))
         }
         
-        # Convert Counter to dict
-        keywords = stats['keywords']
+        # Refine keywords using AI
+        raw_keywords = stats['keywords']
+        refined_keywords = refine_keywords_with_ai(raw_keywords)
+        keywords = refined_keywords
         
         # Convert stocks data
         stocks = {
