@@ -55,34 +55,40 @@ def refine_keywords_with_ai(keywords_list):
         return [{'keyword': k, 'count': v, 'related': [k]} for k, v in counter.most_common()]
     
     try:
-        keywords_str = ', '.join(list(set(keywords_list)))
+        # 1. 先在本地統計頻率
+        counter = Counter(keywords_list)
         
-        prompt = f"""分析以下投資關鍵字並整理成精煉的類別。請合併相似的關鍵字，並統計總次數。
+        # 2. 只取頻率最高的 100 個關鍵字送給 AI (避免 Token 爆炸)
+        # 剩下的低頻關鍵字通常對趨勢分析影響較小，可以直接忽略或歸類為其他
+        top_keywords = [k for k, v in counter.most_common(100)]
+
+        keywords_str = ', '.join(top_keywords)
+        
+        prompt = prompt = f"""分析以下投資關鍵字並整理成精煉的類別。
 
 關鍵字列表:
 {keywords_str}
 
-請嚴格以 JSON 格式回傳整理後的結果，格式如下:
+請嚴格遵守以下規則:
+1. 將相似的關鍵字合併 (例如: "AI", "人工智慧", "GenAI" -> "AI")
+2. **最多只能產生 20 個主要類別**，請挑選最重要的。
+3. 忽略無意義或過於空泛的詞彙。
+4. origin_keywords 必須是輸入列表中的詞。
+
+請嚴格以 JSON 格式回傳，格式如下:
 {{
   "refined_keywords": [
     {{"keyword": "AI晶片", "origin_keywords": ["AI", "晶片", "GPU"]}},
     {{"keyword": "電動車", "origin_keywords": ["EV", "特斯拉"]}}
   ]
-}}
-
-規則:
-1. 關鍵字僅限於輸入的關鍵字列表
-2. 被合併的關鍵字將不再被合併到其他類別中
-3. 將非常相似的關鍵字合併，並從中選出最具代表性的名稱作為 keyword
-4. 移除 origin_keywords 只有一個關鍵字的結果
-5. origin_keywords 只列出合併前所有原始關鍵字
-6. 只返回 JSON，不要其他說明文字"""
+}}"""
         
         response = client.models.generate_content(
             model='gemini-2.0-flash-lite',
             contents=prompt,
             config=types.GenerateContentConfig(
-                temperature=0.3,
+                temperature=0.1,
+                response_mime_type='application/json' # 強制 JSON 模式
                 # thinking_config=types.ThinkingConfig(
                 #     include_thoughts=False,
                 #     thinking_budget=2000, # 0 至 24576 or -1 for thinking until done
@@ -98,22 +104,31 @@ def refine_keywords_with_ai(keywords_list):
             response_text = response_text.rsplit('```', 1)[0]
         
         result = json.loads(response_text)
-        refined = result.get('refined_keywords', [])
+        refined_data = result.get('refined_keywords', [])
 
-        counter = Counter(keywords_list)
-        raw_keyword_count = {k: v for k, v in counter.most_common()}
+        # 3. 重新計算合併後的次數 (使用原始的 counter)
+        final_result = []
+        processed_keywords = set()
 
-        refined = [
-            {
+        for item in refined_data:
+            # 計算這個類別的總次數 (加總所有 origin_keywords 的原始次數)
+            total_count = sum(counter.get(k, 0) for k in item['origin_keywords'])
+            
+            # 記錄已處理的關鍵字
+            for k in item['origin_keywords']:
+                processed_keywords.add(k)
+
+            final_result.append({
                 'keyword': item['keyword'],
-                'count': sum(raw_keyword_count.get(k, 0) for k in set(item['origin_keywords'])),
-                'related': list(set(item['origin_keywords']))  # Remove duplicates in related
-            }
-            for item in refined
-        ]
+                'count': total_count,
+                'related': list(set(item['origin_keywords']))
+            })
         
-        print(f"AI refined {len(keywords_list)} keywords into {len(refined)} categories")
-        return refined
+        # 排序並只回傳前 20 名
+        final_result.sort(key=lambda x: x['count'], reverse=True)
+        
+        print(f"AI refined top {len(top_keywords)} keywords into {len(final_result)} categories")
+        return final_result[:20]
         
     except Exception as e:
         print(f"Error refining keywords with AI: {str(e)}")
@@ -328,11 +343,11 @@ def save_daily_stats(date, stats):
         # Refine keywords using AI
         raw_keywords = stats['keywords']
         refined_keywords = refine_keywords_with_ai(raw_keywords)
-        keywords = refined_keywords
+        keywords = [x for x in refined_keywords if x['keyword'].lower() not in {"other", "其他"}]
         
         # Convert stocks data
         stocks = {
-            key: {
+            data['name'] if key.lower() in {"null", "n/a"} or not key else key: {
                 'name': data['name'],
                 'mentions': Decimal(str(data['mentions'])),
                 'average_sentiment': Decimal(str(round(data['sentiment'] / data['mentions'], 4))) if data['mentions'] > 0 else Decimal('0'),
@@ -340,7 +355,7 @@ def save_daily_stats(date, stats):
             }
             for key, data in stats['stocks'].items()
         }
-        
+
         # Put item to DynamoDB
         # Check if record exists
         existing = stats_table.get_item(Key={'date': date})
