@@ -82,8 +82,8 @@ resource "aws_cloudwatch_log_group" "lambda_aggregate_stats_logs" {
 # EventBridge rule to trigger aggregation hourly
 resource "aws_cloudwatch_event_rule" "aggregate_stats_schedule" {
   name                = "${var.environment}-${var.project_name}-aggregate-stats-schedule"
-  description         = "Trigger stats aggregation every hour"
-  schedule_expression = "rate(1 hour)"
+  description         = "Trigger stats aggregation every 3 hours"
+  schedule_expression = "rate(3 hours)"
 
   tags = {
     Project     = var.project_name
