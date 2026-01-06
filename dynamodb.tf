@@ -123,3 +123,45 @@ resource "aws_dynamodb_table" "daily_stats_table" {
     ManagedBy   = "Terraform"
   }
 }
+
+# DynamoDB Table for Market Data (Taiwan Stock Index and Stocks)
+resource "aws_dynamodb_table" "market_data_table" {
+  name         = "${var.environment}-${var.project_name}-market-data"
+  billing_mode = var.dynamodb_billing_mode
+  hash_key     = "symbol"
+  range_key    = "date"
+
+  attribute {
+    name = "symbol"
+    type = "S"
+  }
+
+  attribute {
+    name = "date"
+    type = "S"
+  }
+
+  # GSI for querying by date across all symbols
+  global_secondary_index {
+    name            = "DateIndex"
+    hash_key        = "date"
+    range_key       = "symbol"
+    projection_type = "ALL"
+  }
+
+  # Point-in-time recovery for data protection
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  # Server-side encryption
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
