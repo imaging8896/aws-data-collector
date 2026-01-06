@@ -70,27 +70,38 @@ def generate_stock_opportunities_chart(data):
                                alpha=0.6, edgecolors='black', linewidth=1)
             
             # Group nearby stocks and add labels with collision avoidance
-            min_distance = 0.1  # Minimum distance to be considered "nearby"
+            min_distance = 0.15  # Increased minimum distance to reduce grouping
             
             # Normalize data for distance calculation
             x_range = max(mentions) - min(mentions) if max(mentions) != min(mentions) else 1
             y_range = max(sentiments) - min(sentiments) if max(sentiments) != min(sentiments) else 1
             
+            # Only label high-priority stocks (high sentiment OR high mentions)
+            # Prioritize stocks by score: sentiment weight + mention weight
+            stock_data_with_priority = [
+                (name, x, y, (y if y > 0.6 else 0) * 4 + (x if x > 4 else 0))
+                for name, x, y in zip(stock_names, mentions, sentiments)
+                if (x > 4 or y > 0.6)
+            ]
+            
+            # Sort by priority and only keep top 20
+            stock_data_with_priority.sort(key=lambda item: item[3], reverse=True)
+            stock_data = [(name, x, y) for name, x, y, _ in stock_data_with_priority[:20]]
+            
             # Create clusters of nearby stocks
-            stock_data = list(zip(stock_names, mentions, sentiments))
             clusters = []
             used = set()
             
-            for i, (name1, x1, y1) in enumerate(stock_data):
-                if i in used or not (y1 > 0.6 or x1 > 4):
+            for name1, x1, y1 in stock_data:
+                if name1 in used:
                     continue
-                
+
                 cluster = [(name1, x1, y1)]
-                used.add(i)
+                used.add(name1)
                 
                 # Find nearby stocks
-                for j, (name2, x2, y2) in enumerate(stock_data):
-                    if j in used or j == i:
+                for name2, x2, y2 in stock_data:
+                    if name2 in used:
                         continue
                     
                     # Calculate normalized distance
@@ -98,7 +109,7 @@ def generate_stock_opportunities_chart(data):
                     
                     if norm_dist < min_distance ** 2:
                         cluster.append((name2, x2, y2))
-                        used.add(j)
+                        used.add(name2)
                 
                 clusters.append(cluster)
             
@@ -112,9 +123,16 @@ def generate_stock_opportunities_chart(data):
                 if len(cluster) == 1:
                     label_text = cluster[0][0]
                 else:
-                    # Show up to 3 stocks per cluster
                     names = [name for name, _, _ in cluster]
                     label_text = '\n'.join(names)
+                # elif len(cluster) <= 3:
+                #     # Show all stocks if 3 or fewer
+                #     names = [name for name, _, _ in cluster]
+                #     label_text = '\n'.join(names)
+                # else:
+                #     # Show top 2 stocks and count the rest
+                #     names = [name for name, _, _ in cluster[:2]]
+                #     label_text = '\n'.join(names) + f'\n+{len(cluster)-2}檔'
                 
                 # Determine text position based on quadrant to avoid overlap
                 xlim = ax.get_xlim()
