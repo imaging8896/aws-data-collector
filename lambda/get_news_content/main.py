@@ -182,7 +182,6 @@ JSON 格式要求，請嚴格遵守，回應以下objec in Json：
 {{
     "importance_score": 0.6,  // 整體重要性評分 (0到1，0為非常不重要，1為非常重要)
     "market_sentiment": {{
-        "overall_mood": "新聞整體情緒 (正面、負面、中立)",
         "score": 0.2,  // 情緒分數 (-1到1，-1為非常負面，1為非常正面)
         "volatility_trigger": false  // 是否可能引發市場劇烈波動 (true或false) 
     }},
@@ -215,8 +214,7 @@ JSON 格式要求，請嚴格遵守，回應以下objec in Json：
 
 新聞標題: {title}
 新聞內容: {content}
-
-請嚴格按照上述 JSON 格式回應，不要包含任何額外的文字說明。
+請嚴格按照上述 JSON 格式回應，JSON去除空白一行回應，不要包含任何額外的文字說明。
 """
     
     # Create request object for Batch API
@@ -232,7 +230,7 @@ JSON 格式要求，請嚴格遵守，回應以下objec in Json：
             ],
             "generationConfig": {
                 "thinking_config": {
-                    "thinking_level": "HIGH" # MEDIUM, LOW
+                    "thinking_level": "HIGH" # HIGH, MEDIUM, LOW
                 },
                 "responseMimeType": "application/json",
                 "temperature": 0.7

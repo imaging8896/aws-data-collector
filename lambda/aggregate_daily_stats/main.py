@@ -269,14 +269,13 @@ def aggregate_by_date(items):
         # 3. Market Sentiment
         market_sentiment = analysis.get('market_sentiment', {})
         if market_sentiment:
-            mood = market_sentiment['overall_mood'].lower()
             score = float(market_sentiment['score'])
-            
             daily_stats[date]['sentiment']['scores'].append(score)
             
-            if '正面' in mood or 'positive' in mood:
+            # Determine mood based on score (-1 to 1)
+            if score > 0.2:
                 daily_stats[date]['sentiment']['positive'] += 1
-            elif '負面' in mood or 'negative' in mood:
+            elif score < -0.2:
                 daily_stats[date]['sentiment']['negative'] += 1
             else:
                 daily_stats[date]['sentiment']['neutral'] += 1
