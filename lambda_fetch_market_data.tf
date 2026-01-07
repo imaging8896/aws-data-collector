@@ -52,7 +52,8 @@ resource "aws_lambda_function" "fetch_market_data" {
 
   environment {
     variables = {
-      DYNAMODB_TABLE_NAME = aws_dynamodb_table.market_data_table.name
+      MARKET_DATA_TABLE_NAME = aws_dynamodb_table.market_data_table.name
+      INVESTOR_DATA_TABLE_NAME = aws_dynamodb_table.investor_data_table.name
       ENVIRONMENT         = var.environment
     }
   }
@@ -96,6 +97,7 @@ resource "aws_cloudwatch_event_target" "fetch_market_data_target" {
   arn       = aws_lambda_function.fetch_market_data.arn
 
   input = jsonencode({
+    data_type = "index",
     index_names = ["tw_index", "2330"],
     from_days   = 7,
   })
@@ -103,9 +105,43 @@ resource "aws_cloudwatch_event_target" "fetch_market_data_target" {
 
 # Permission for EventBridge to invoke Lambda
 resource "aws_lambda_permission" "allow_eventbridge_fetch_market_data" {
-  statement_id  = "AllowExecutionFromEventBridge"
+  statement_id  = "AllowExecutionFromEventBridgeIndexData"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.fetch_market_data.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.fetch_market_data_schedule.arn
+}
+
+
+# EventBridge rule to trigger daily at 19:00 Taiwan time (11:00 UTC)
+resource "aws_cloudwatch_event_rule" "fetch_investor_data_schedule" {
+  name                = "${var.environment}-${var.project_name}-fetch-investor-data-schedule"
+  description         = "Trigger investor data fetch daily at 19:00 Taiwan time"
+  schedule_expression = "cron(0 11 * * ? *)"  # 11:00 UTC = 19:00 Taiwan (UTC+8)
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
+
+# EventBridge target
+resource "aws_cloudwatch_event_target" "fetch_investor_data_target" {
+  rule      = aws_cloudwatch_event_rule.fetch_investor_data_schedule.name
+  target_id = "FetchInvestorDataLambda"
+  arn       = aws_lambda_function.fetch_market_data.arn
+
+  input = jsonencode({
+    data_type = "investor"
+  })
+}
+
+# Permission for EventBridge to invoke Lambda
+resource "aws_lambda_permission" "allow_eventbridge_fetch_investor_data" {
+  statement_id  = "AllowExecutionFromEventBridgeInvestorData"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.fetch_market_data.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.fetch_investor_data_schedule.arn
 }

@@ -1,15 +1,15 @@
 import json
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from decimal import Decimal
 import boto3
 
-from cnyes.index import Index, get_indexes
-
 # Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')
-table_name = os.environ['DYNAMODB_TABLE_NAME']
-market_data_table = dynamodb.Table(table_name)
+market_data_table_name = os.environ['MARKET_DATA_TABLE_NAME']
+investor_data_table_name = os.environ['INVESTOR_DATA_TABLE_NAME']
+market_data_table = dynamodb.Table(market_data_table_name)
+investor_data_table = dynamodb.Table(investor_data_table_name)
 
 
 def handler(event, context):
@@ -18,6 +18,7 @@ def handler(event, context):
     Runs daily at 16:00 Taiwan time (08:00 UTC)
 
     {
+        "data_type": "index", # index or investor
         "index_names": ["tw_index", "2330"],
         "from_days": 30,
     }
@@ -29,55 +30,33 @@ def handler(event, context):
             payload = event['responsePayload']
             if isinstance(payload, dict) and 'body' in payload:
                 body = json.loads(payload['body']) if isinstance(payload['body'], str) else payload['body']
+                data_type = body.get('data_type', "index")
                 index_names = body.get('index_names', ["tw_index"])
                 from_days = body.get('from_days', 14)
+                data_date = date.fromisoformat(body.get('data_date', date.today().isoformat()))
             else:
+                data_type = payload.get('data_type', "index")
                 index_names = payload.get('index_names', ["tw_index"])
                 from_days = payload.get('from_days', 14)
+                data_date = date.fromisoformat(payload.get('data_date', date.today().isoformat()))
         else:
             # Direct invocation
+            data_type = event.get('data_type', "index")
             index_names = event.get('index_names', ["tw_index"])
             from_days = int(event.get('from_days', 14))
+            data_date = date.fromisoformat(event.get('data_date', date.today().isoformat()))
 
-        def _to_index(name: str) -> Index:
-            if name == "tw_index":
-                return Index.tw_index()
-            else:
-                return Index.tw_stock(name)
-
-        index_names = list(map(_to_index, index_names))
-
-        # Calculate time range: last 30 days
-        now = datetime.now(timezone.utc)
-        to_timestamp = now
-        from_timestamp = now - timedelta(days=from_days)
-
-        print(f"Fetching market data for indexes {[str(idx) for idx in index_names]} from {from_timestamp} to {to_timestamp}")
-        data = get_indexes(index_names, from_dt=from_timestamp, to_dt=to_timestamp)
-        
-
-        for index, index_data in data.items():
-            index_name = index_data['name']
-            print(f"Data for {str(index)} {index_name}")
-            for date_str, opening, closing, high, low, volume, turnover in index_data['data']:
-                # Save to DynamoDB
-                market_data_table.put_item(Item={
-                    'symbol': index.symbol,
-                    'date': date_str,
-                    'open': opening,
-                    'close': closing,
-                    'high': high,
-                    'low': low,
-                    'volume': volume,
-                    'turnover': turnover, # 成交金額
-                    'updated_at': int(now.timestamp())
-                })
-            print(f"Saved {len(index_data['data'])} data points for {str(index)} {index_name}")
+        if data_type == "index":
+            get_index(index_names, from_days)
+        elif data_type == "investor":
+            get_investor(data_date)
+        else:
+            raise ValueError(f"Unsupported data_type: {data_type}")
 
         return {
             'statusCode': 200,
             'body': json.dumps({
-                'message': 'Market data fetched successfully'
+                'message': f"Market data '{data_type}' fetched successfully"
             })
         }
         
@@ -94,11 +73,68 @@ def handler(event, context):
         }
 
 
+def get_index(index_names, from_days):
+    from cnyes.index import Index, get_indexes
+
+    def _to_index(name: str) -> Index:
+        if name == "tw_index":
+            return Index.tw_index()
+        else:
+            return Index.tw_stock(name)
+        
+    print(f"Getting index data for: {index_names} for last {from_days} days")
+
+    index_names = list(map(_to_index, index_names))
+
+    # Calculate time range: last 30 days
+    now = datetime.now(timezone.utc)
+    to_timestamp = now
+    from_timestamp = now - timedelta(days=from_days)
+
+    print(f"Fetching market data for indexes {[str(idx) for idx in index_names]} from {from_timestamp} to {to_timestamp}")
+    data = get_indexes(index_names, from_dt=from_timestamp, to_dt=to_timestamp)
+    
+
+    for index, index_data in data.items():
+        index_name = index_data['name']
+        print(f"Data for {str(index)} {index_name}")
+        for date_str, opening, closing, high, low, volume, turnover in index_data['data']:
+            # Save to DynamoDB
+            market_data_table.put_item(Item={
+                'symbol': index.symbol,
+                'date': date_str,
+                'open': opening,
+                'close': closing,
+                'high': high,
+                'low': low,
+                'volume': volume,
+                'turnover': turnover, # 成交金額
+                'updated_at': int(now.timestamp())
+            })
+        print(f"Saved {len(index_data['data'])} data points for {str(index)} {index_name}")
+
+
+def get_investor(data_date: date):
+    from twse.investor import get_investor
+
+    print(f"Getting investor data for: {data_date}")
+
+    data = get_investor(data_date)
+
+    investor_data_table.put_item(Item={
+        'date': data_date.isoformat(),
+        'data': data,
+        'updated_at': int(datetime.now(timezone.utc).timestamp())
+    })
+    print(f"Saved investor data for {data_date}\n{data}")
+
+
 if __name__ == "__main__":
     # Test locally
     test_event = {
+        "data_type": "index",
         "index_names": ["tw_index", "2330"],
-        "from_days": 30,
+        "from_days": 300,
     }
     result = handler(test_event, None)
     print(json.dumps(json.loads(result['body']), indent=2, ensure_ascii=False))
