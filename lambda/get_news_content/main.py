@@ -214,7 +214,7 @@ JSON 格式要求，請嚴格遵守，回應以下objec in Json：
 
 新聞標題: {title}
 新聞內容: {content}
-請嚴格按照上述 JSON 格式回應，JSON去除空白一行回應，不要包含任何額外的文字說明。
+請嚴格按照上述 JSON 格式回應，不要包含任何額外的文字說明。
 """
     
     # Create request object for Batch API
@@ -230,7 +230,7 @@ JSON 格式要求，請嚴格遵守，回應以下objec in Json：
             ],
             "generationConfig": {
                 "thinking_config": {
-                    "thinking_level": "HIGH" # HIGH, MEDIUM, LOW
+                    "thinking_level": "MEDIUM" # HIGH, MEDIUM, LOW
                 },
                 "responseMimeType": "application/json",
                 "temperature": 0.7
