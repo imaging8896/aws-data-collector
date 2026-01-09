@@ -2,7 +2,7 @@ import decimal
 import json
 import os
 import boto3
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from google import genai
 from google.genai import types
 
@@ -44,21 +44,48 @@ def handler(event, context):
 
         print(f"Found {len(response['Items'])} pending batches.")
         
+        # 按 batch_id 分組
+        batches_by_id = {}
         for item in response['Items']:
             batch_id = item['batch_id']
             url = item['url']
-            
+
+            if batch_id in batches_by_id:
+                raise ValueError(f"Duplicate batch_id found in scan results: {batch_id}")
+
+            if url == '__metadata__':
+                # 這是 metadata 記錄
+                batches_by_id[batch_id] = [
+                    item['url']
+                    for item in sorted(item['metadata'], key=lambda x: x['request_index'])
+                ]
+            else:
+                batches_by_id[batch_id] = [url]
+        
+        for batch_id, urls in batches_by_id.items():
             try:
                 # Check batch status
                 # Note: batch_id should be the full resource name e.g. "batches/..."
                 # If we stored just the ID, we might need to prepend "batches/" if the SDK expects it,
                 # but usually the create response name includes it.
                 batch_job = client.batches.get(name=batch_id)
+
+                if batch_job.state == types.JobState.JOB_STATE_CANCELLING:
+                    print(f"Batch {batch_id} was cancelling...")
+                    continue
                 
-                print(f"Batch {batch_id} state: {batch_job.state}")
-                
+                if batch_job.state == types.JobState.JOB_STATE_CANCELLED:
+                    print(f"Batch {batch_id} was cancelled. Deleting record.")
+                    delete_batch(batch_job)
+                    batch_table.delete_item(Key={'batch_id': batch_id})
+                    continue
+
                 if batch_job.state == types.JobState.JOB_STATE_PENDING:
                     # Still running
+                    print(f"Batch {batch_id} is still pending since {batch_job.create_time}.")
+                    if batch_job.create_time < datetime.now(timezone.utc) - timedelta(hours=6):
+                        print(f"Batch {batch_id} has been pending for over 6 hours. Cancelling.")
+                        client.batches.cancel(name=batch_id)
                     continue
                     
                 if batch_job.state == types.JobState.JOB_STATE_SUCCEEDED:
@@ -68,13 +95,17 @@ def handler(event, context):
                     result_file_name = batch_job.dest.file_name
                     file_content_bytes = client.files.download(file=result_file_name)
                     output_content = file_content_bytes.decode('utf-8')
-                    
+                    output_lines = output_content.strip().split('\n')
+
+                    if len(output_lines) != len(urls):
+                        raise ValueError(f"Output lines count {len(output_lines)} does not match URLs count {len(urls)} for batch {batch_id}")
+
                     # Parse JSONL results
-                    # We expect one result since we submit one request per batch
-                    for line in output_content.strip().split('\n'):
+                    # 逐行處理輸出，使用順序對應 URL
+                    for url, line in zip(urls, output_lines):
                         result = json.loads(line)
-                        
-                        # Check for errors in the individual request
+                        print(f"Processing result:\n{result}")
+
                         if 'error' in result:
                             print(f"Error in batch result for {url}: {result['error']}")
                             continue
@@ -126,10 +157,6 @@ def handler(event, context):
                                 else:
                                     # Fallback to the last text part
                                     text_content = part_text
-                            
-                            if not text_content:
-                                print(f"No text content found in parts for {url}")
-                                continue
 
                             # Parse the JSON from the text content
                             # Sometimes the model might wrap JSON in markdown blocks
@@ -158,16 +185,19 @@ def handler(event, context):
                                 }
                             )
                             print(f"Updated analysis for URL: {url}")
-
-                            # Delete from batch table
-                            batch_table.delete_item(Key={'batch_id': batch_id})
                         except Exception as parse_error:
                             print(f"Error parsing result for {url}: {parse_error}")
                             print(f"Raw result line: {line}")
-                    
+
+                    delete_batch(batch_job)
+
+                    # Delete from batch table
+                    batch_table.delete_item(Key={'batch_id': batch_id})
+
                 elif batch_job.state == types.JobState.JOB_STATE_FAILED or batch_job.state == types.JobState.JOB_STATE_CANCELLED:
                     print(f"Batch {batch_id} failed or cancelled. {batch_job.error}")
                     # Optionally log errors from batch_job.error
+                    delete_batch(batch_job)
                     batch_table.delete_item(Key={'batch_id': batch_id})
                 
             except Exception as e:
@@ -187,3 +217,30 @@ def handler(event, context):
                 'error': str(e)
             })
         }
+
+
+def delete_batch(batch: types.BatchJob):
+    # Delete source and destination files
+    if batch.src:
+        source_file_name = batch.src.file_name
+        try:
+            _gemini_client.files.delete(name=source_file_name)
+            print(f"Deleted source file: {source_file_name}")
+        except Exception as delete_error:
+            import traceback
+            traceback.print_exc()
+            print(f"Error deleting source file {source_file_name}: {delete_error}")
+
+    try:
+        _gemini_client.batches.delete(name=batch.name)
+        print(f"Deleted batch: {batch.name}")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"Error deleting batch {batch.name}: {e}")
+
+
+if __name__ == "__main__":
+    test_event = { }
+    result = handler(test_event, None)
+    print(json.dumps(json.loads(result['body']), indent=2, ensure_ascii=False))
