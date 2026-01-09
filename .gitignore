@@ -65,6 +65,9 @@ layer_aggregate_stats/
 lambda_fetch_market_data_function.zip
 lambda_fetch_market_data_layer.zip
 layer_fetch_market_data/
+lambda_batch_analyzer_function.zip
+lambda_batch_analyzer_layer.zip
+layer_batch_analyzer/
 lambda/**/*.ttf
 
 # Python cache files
