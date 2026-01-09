@@ -30,9 +30,9 @@ VALID_SOURCE_DOMAINS = {
     # https://news.pts.org.tw/video/15379 # 公視新聞
     # "money.udn.com", # 經濟日報 但沒有 article tag, house.udn.com
     # "news.ustv.com.tw", 非凡
-    "finance.ettoday.net", # speed.ettoday.net, ai.ettoday.net, house.ettoday.net
-    "news.cnyes.com", # hao.cnyes.com
-    "www.moneydj.com", 
+    # "finance.ettoday.net", # speed.ettoday.net, ai.ettoday.net, house.ettoday.net
+    # "news.cnyes.com", # hao.cnyes.com
+    # "www.moneydj.com", 
     "www.ctee.com.tw",
 }
 
