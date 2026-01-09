@@ -15,27 +15,7 @@ from request import request_get_news
 # Initialize DynamoDB client
 dynamodb = boto3.resource('dynamodb')  # type: ignore
 news_table_name = os.environ['DYNAMODB_TABLE_NAME']
-batch_table_name = os.environ['DYNAMODB_BATCH_TABLE_NAME']
 news_table = dynamodb.Table(news_table_name)  # type: ignore
-batch_table = dynamodb.Table(batch_table_name)  # type: ignore
-
-# Initialize Secrets Manager client
-secrets_client = boto3.client('secretsmanager')
-gemini_secret_name = os.environ['GEMINI_API_KEY_SECRET_NAME']
-
-categories = os.environ['CATEGORIES'].split(',')
-
-# Cache Gemini client
-_gemini_client = None
-
-def get_gemini_client():
-    global _gemini_client
-    if _gemini_client is None:
-        # Retrieve Gemini API key from Secrets Manager
-        secret_response = secrets_client.get_secret_value(SecretId=gemini_secret_name)
-        api_key = secret_response['SecretString']
-        _gemini_client = genai.Client(api_key=api_key)
-    return _gemini_client
 
 
 def handler(event, context):
@@ -131,10 +111,7 @@ def process_news_url(url):
             news_table.put_item(Item=data)
 
         print(f"News content updated for URL: {actual_news_url}")
-        
-        # Submit batch job to Gemini
-        submit_gemini_batch(actual_news_url, data['title'], news_content)
-            
+
         return {
             'statusCode': 200,
             'body': json.dumps({
@@ -164,114 +141,3 @@ def get_news_content(url: str, mobile: bool = True, desktop: bool = True):
         raise ValueError(f"No content section(<p>) found in the news article(<article>) of url: {url}")
 
     return parser.content, news_url
-
-
-def submit_gemini_batch(news_url: str, title: str, content: str):
-    """
-    Submit batch request to Gemini
-    """
-    client = get_gemini_client()
-    
-    prompt = f"""
-你是一位專業的經濟新聞分析師,專門分析新聞的內容對各產業的影響。
-請以此新聞內容為唯一依據，進行以下產業分析:
-1.直接影響產業: 新聞內容中提及的所有產業領域
-2.間接影響產業: 根據新聞內容推論可能受到影響的相關產業領域
-
-JSON 格式要求，請嚴格遵守，回應以下objec in Json：
-{{
-    "importance_score": 0.6,  // 整體重要性評分 (0到1，0為非常不重要，1為非常重要)
-    "market_sentiment": {{
-        "score": 0.2,  // 情緒分數 (-1到1，-1為非常負面，1為非常正面)
-        "volatility_trigger": false  // 是否可能引發市場劇烈波動 (true或false) 
-    }},
-    "sector_rotation": [
-        {{
-            "sector": "請務必從以下清單中選擇最合適的一個分類：{', '.join(categories)}",
-            "sub_sector": "具體產業領域名稱(例如: CoWoS, 散熱模組, 生成式AI)",
-            "trend": "資金流動的趨勢 (流入、流出、持平)",
-            "keyword": "資金流動理由"
-        }}
-    ],
-    "entities_mentioned": [
-        {{
-            "name": "公司或組織名稱",
-            "id": "公司對應台股代碼或是美股代碼(如有)，請嚴謹核對公司與代碼的對應關係，若無對應代碼請填name",
-            "sentiment_score": 0.3,  // 該實體在新聞中的情緒分數 (-1到1，-1為非常負面，1為非常正面)
-            "event": "催化劑事件 (如有)",
-            "role": "leader or laggard"  // 該實體在產業中的角色 (leader或laggard)
-        }}
-    ],
-    "institutional_investor_behavior": {{
-        "action": "買超 or 賣超",  // 三大法人在新聞中的操作行為
-        "reason": "操作原因或背景說明",
-        "target_sectors": [
-            "請務必從以下清單中選擇最合適的一個分類：{', '.join(categories)}"
-        ]
-    }},
-    "investment_themes": ["COWOS", "生成式AI"]  // 根據新聞內容提取的投資主題清單(sub-sectors)
-}}
-
-新聞標題: {title}
-新聞內容: {content}
-請嚴格按照上述 JSON 格式回應，不要包含任何額外的文字說明。
-"""
-    
-    # Create request object for Batch API
-    # The format for Gemini Batch API input file (JSONL)
-    request_body = {
-        "request": {
-            "contents": [
-                {
-                    "parts": [
-                        {"text": prompt}
-                    ]
-                }
-            ],
-            "generationConfig": {
-                "thinking_config": {
-                    "thinking_level": "MEDIUM" # HIGH, MEDIUM, LOW
-                },
-                "responseMimeType": "application/json",
-                "temperature": 0.7
-            }
-        }
-    }
-    
-    # Create temporary JSONL file
-    file_path = f"/tmp/{os.path.basename(news_url)}.jsonl"
-    with open(file_path, 'w', encoding='utf-8') as f:
-        f.write(json.dumps(request_body) + '\n')
-        
-    try:
-        # Upload file to Gemini
-        # Note: client.files.upload takes 'file' argument which is the path
-        upload_file = client.files.upload(
-            file=file_path,
-            config={'mime_type': 'application/jsonl'}
-        )
-        
-        # Create batch job
-        # model should be the model name
-        batch_job = client.batches.create(
-            model='gemini-3-flash-preview',
-            src=upload_file.name
-        )
-        
-        # Store batch ID in DynamoDB
-        batch_table.put_item(Item={
-            'batch_id': batch_job.name,
-            'url': news_url,
-            'created_at': int(datetime.now().timestamp()),
-            'status': 'PENDING'
-        })
-        
-        print(f"Created Gemini batch job: {batch_job.name}")
-        
-    except Exception as e:
-        print(f"Error submitting batch job: {e}")
-        raise
-    finally:
-        # Clean up temp file
-        if os.path.exists(file_path):
-            os.remove(file_path)
