@@ -185,7 +185,10 @@ def submit_combined_batch(news_items):
                         ],
                         "generationConfig": {
                             "thinking_config": {
-                                "thinking_level": "MEDIUM"
+                                # Gemini 2.5 Flash 1~24567
+                                # Gemini 2.5 Pro 128~32768
+                                # Gemini 2.5 Flash lite 512~24567
+                                "thinking_budget": 10000, 
                             },
                             "responseMimeType": "application/json",
                             "temperature": 0.7
