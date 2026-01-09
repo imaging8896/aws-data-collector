@@ -132,9 +132,10 @@ def get_investor(data_date: date):
 if __name__ == "__main__":
     # Test locally
     test_event = {
-        "data_type": "index",
+        "data_type": "investor",
         "index_names": ["tw_index", "2330"],
         "from_days": 300,
+        "data_date": "2026-01-02",
     }
     result = handler(test_event, None)
     print(json.dumps(json.loads(result['body']), indent=2, ensure_ascii=False))
