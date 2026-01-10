@@ -14,6 +14,9 @@ def get_investor(data_date: date):
         raise Exception(f"API request failed with status {response.status_code}: {response.text}")
     
     data = response.json()
+
+    if data.get('stat') == '很抱歉，沒有符合條件的資料!':
+        return
     
     if data.get('stat') != 'OK':
         raise Exception(f"API error:\n{data}")

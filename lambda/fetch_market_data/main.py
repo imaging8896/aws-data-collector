@@ -119,14 +119,15 @@ def get_investor(data_date: date):
 
     print(f"Getting investor data for: {data_date}")
 
-    data = get_investor(data_date)
-
-    investor_data_table.put_item(Item={
-        'date': data_date.isoformat(),
-        'data': data,
-        'updated_at': int(datetime.now(timezone.utc).timestamp())
-    })
-    print(f"Saved investor data for {data_date}\n{data}")
+    if data := get_investor(data_date):
+        investor_data_table.put_item(Item={
+            'date': data_date.isoformat(),
+            'data': data,
+            'updated_at': int(datetime.now(timezone.utc).timestamp())
+        })
+        print(f"Saved investor data for {data_date}\n{data}")
+    else:
+        print(f"No investor data available for {data_date}")
 
 
 if __name__ == "__main__":
