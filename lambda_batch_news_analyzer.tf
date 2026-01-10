@@ -79,11 +79,11 @@ resource "aws_cloudwatch_log_group" "batch_analyzer_logs" {
   }
 }
 
-# EventBridge Rule to trigger every 3 hours
+# EventBridge Rule to trigger every 1 hour
 resource "aws_cloudwatch_event_rule" "batch_analyzer_schedule" {
   name                = "${var.environment}-${var.project_name}-batch-analyzer-schedule"
-  description         = "Trigger batch news analyzer every 3 hours"
-  schedule_expression = "rate(3 hours)"
+  description         = "Trigger batch news analyzer every 1 hour"
+  schedule_expression = "rate(1 hour)"
 
   tags = {
     Project     = var.project_name

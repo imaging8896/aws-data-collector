@@ -51,9 +51,19 @@ def handler(event, context):
             }
         
         print(f"Found {len(news_items_to_analyze)} news items to analyze")
+
+        if len(news_items_to_analyze) < 5:
+            print("Not enough news items to analyze, skipping batch submission")
+            return {
+                'statusCode': 200,
+                'body': json.dumps({
+                    'message': 'Not enough unanalyzed news items to submit batch',
+                    'count': len(news_items_to_analyze)
+                })
+            }
         
         # Submit combined batch job
-        submit_combined_batch(news_items_to_analyze[:10])
+        submit_combined_batch(news_items_to_analyze[:20])
         
         return {
             'statusCode': 200,
@@ -92,10 +102,12 @@ def scan_unanalyzed_news():
             ExpressionAttributeNames={'#status': 'status'},
             ExpressionAttributeValues={':status': 'PENDING'}
         )
+
+        set().update()
         
         for item in batch_response.get('Items', []):
             if item['url'] == '__metadata__':
-                pending_urls.extend([mapping['url'] for mapping in item['metadata']])
+                pending_urls.update([mapping['url'] for mapping in item['metadata']])
             else:  
                 pending_urls.add(item['url'])
         
@@ -184,14 +196,14 @@ def submit_combined_batch(news_items):
                             }
                         ],
                         "generationConfig": {
-                            "thinking_config": {
-                                # Gemini 2.5 Flash 1~24567
-                                # Gemini 2.5 Pro 128~32768
-                                # Gemini 2.5 Flash lite 512~24567
-                                "thinking_budget": 10000, 
-                            },
+                            # "thinking_config": {
+                            #     # Gemini 2.5 Flash 1~24567
+                            #     # Gemini 2.5 Pro 128~32768
+                            #     # Gemini 2.5 Flash lite 512~24567
+                            #     "thinking_budget": 10000, 
+                            # },
                             "responseMimeType": "application/json",
-                            "temperature": 0.7
+                            "temperature": 0.2
                         }
                     }
                 }
@@ -208,7 +220,7 @@ def submit_combined_batch(news_items):
         # Create batch job
         batch_job = client.batches.create(
             # model='gemini-3-flash-preview',
-            model='gemini-2.5-pro',
+            model='gemini-2.5-flash',
             src=upload_file.name
         )
 
