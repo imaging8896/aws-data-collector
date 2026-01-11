@@ -5,8 +5,8 @@ from curl_cffi import requests
 
 
 def get_investor(data_date: date):
-    data_date = data_date.isoformat().replace('-', '')
-    url = f"https://www.twse.com.tw/rwd/zh/fund/BFI82U?type=day&dayDate={data_date}&response=json"
+    data_date_str_without_dash = data_date.isoformat().replace('-', '')
+    url = f"https://www.twse.com.tw/rwd/zh/fund/BFI82U?type=day&dayDate={data_date_str_without_dash}&response=json"
 
     response = requests.get(url, impersonate="chrome")
 
@@ -21,8 +21,8 @@ def get_investor(data_date: date):
     if data.get('stat') != 'OK':
         raise Exception(f"API error:\n{data}")
     
-    if data.get('date') != data_date:
-        raise Exception(f"Returned data date {data.get('date')} does not match requested date {data_date}\n{data}")
+    if data.get('date') != data_date_str_without_dash:
+        raise Exception(f"Returned data date {data.get('date')} does not match requested date {data_date_str_without_dash}\n{data}")
     
     print(f"Got data {data['title']}")
 
