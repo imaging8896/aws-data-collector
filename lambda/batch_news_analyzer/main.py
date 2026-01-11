@@ -52,15 +52,15 @@ def handler(event, context):
         
         print(f"Found {len(news_items_to_analyze)} news items to analyze")
 
-        if len(news_items_to_analyze) < 5:
-            print("Not enough news items to analyze, skipping batch submission")
-            return {
-                'statusCode': 200,
-                'body': json.dumps({
-                    'message': 'Not enough unanalyzed news items to submit batch',
-                    'count': len(news_items_to_analyze)
-                })
-            }
+        # if len(news_items_to_analyze) < 5:
+        #     print("Not enough news items to analyze, skipping batch submission")
+        #     return {
+        #         'statusCode': 200,
+        #         'body': json.dumps({
+        #             'message': 'Not enough unanalyzed news items to submit batch',
+        #             'count': len(news_items_to_analyze)
+        #         })
+        #     }
         
         # Submit combined batch job
         submit_combined_batch(news_items_to_analyze[:20])
