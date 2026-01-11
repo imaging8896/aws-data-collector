@@ -114,6 +114,16 @@ resource "aws_cloudwatch_event_target" "fetch_indexes_target" {
   })
 }
 
+resource "aws_cloudwatch_event_target" "fetch_stock_group_trade_target" {
+  rule      = aws_cloudwatch_event_rule.fetch_market_data_schedule.name
+  target_id = "FetchStockGroupTradeLambda"
+  arn       = aws_lambda_function.fetch_market_data.arn
+
+  input = jsonencode({
+    data_type = "stock_group_trade"
+  })
+}
+
 # Permission for EventBridge to invoke Lambda
 resource "aws_lambda_permission" "allow_eventbridge_fetch_market_data" {
   statement_id  = "AllowExecutionFromEventBridgeIndexData"

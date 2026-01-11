@@ -54,6 +54,8 @@ def handler(event, context):
             get_investor(data_date)
         elif data_type == "indexes":
             get_indexes()
+        elif data_type == "stock_group_trade":
+            get_stock_group_trade(data_date)
         else:
             raise ValueError(f"Unsupported data_type: {data_type}")
 
@@ -173,6 +175,50 @@ def get_indexes():
         )
     
     print(f"Saved/Updated {len(data)} indexes")
+    return data
+
+
+def get_stock_group_trade(data_date: date):
+    from twse.stock_group_trade import get_stock_group_trade
+
+    print("Getting stock group trade data")
+
+    data = get_stock_group_trade(data_date)
+    
+    if not data:
+        print("No stock group trade data available")
+        return data
+    
+    # Get timestamp for all items
+    updated_at = int(datetime.now(timezone.utc).timestamp())
+
+    data_date_str = data_date.isoformat()
+    # Save each index as a separate item with name+date as composite key
+    for index_name, index_data in data.items():
+        print(f"Index: {index_name}, Shares: {index_data['shares']}, Date: {data_date_str}, Amount: {index_data['amount']}, Transactions: {index_data['transactions']}")
+        
+        # Update item with composite key (name, date)
+        # If the item exists, it will be updated; otherwise, it will be created
+        index_data_table.update_item(
+            Key={
+                'name': index_name,
+                'date': data_date_str
+            },
+            UpdateExpression='SET #shares = :shares, #amount = :amount, #transactions = :transactions, updated_at = :updated_at',
+            ExpressionAttributeNames={
+                '#shares': 'shares',
+                '#amount': 'amount',
+                '#transactions': 'transactions'
+            },
+            ExpressionAttributeValues={
+                ':shares': index_data['shares'],
+                ':amount': index_data['amount'],
+                ':transactions': index_data['transactions'],
+                ':updated_at': updated_at
+            }
+        )
+    
+    print(f"Saved/Updated {len(data)} stock group trades")
     return data
 
 
