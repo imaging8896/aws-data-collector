@@ -14,8 +14,8 @@ news_table_name = os.environ['DYNAMODB_TABLE_NAME']
 batch_table_name = os.environ['DYNAMODB_BATCH_TABLE_NAME']
 gemini_secret_name = os.environ['GEMINI_API_KEY_SECRET_NAME']
 
-news_table = dynamodb.Table(news_table_name)
-batch_table = dynamodb.Table(batch_table_name)
+news_table = dynamodb.Table(news_table_name) # type: ignore
+batch_table = dynamodb.Table(batch_table_name) # type: ignore
 
 categories = os.environ['CATEGORIES'].split(',')
 
@@ -121,7 +121,7 @@ def scan_unanalyzed_news():
             )
             for item in batch_response.get('Items', []):
                 if item['url'] == '__metadata__':
-                    pending_urls.extend([mapping['url'] for mapping in item['metadata']])
+                    pending_urls.update([mapping['url'] for mapping in item['metadata']])
                 else:  
                     pending_urls.add(item['url'])
         
@@ -221,7 +221,7 @@ def submit_combined_batch(news_items):
         batch_job = client.batches.create(
             # model='gemini-3-flash-preview',
             model='gemini-2.5-flash',
-            src=upload_file.name
+            src=upload_file.name # type: ignore
         )
 
         # Store batch ID with all URLs in DynamoDB
