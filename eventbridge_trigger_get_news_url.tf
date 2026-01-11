@@ -1,9 +1,9 @@
 # ===== EventBridge Direct Triggers for News Collection =====
 
-# EventBridge Rule to trigger finance news collection hourly
-resource "aws_cloudwatch_event_rule" "hourly_finance_news_trigger" {
-  name                = "${var.environment}-${var.project_name}-hourly-finance-news"
-  description         = "Trigger news URL collection for finance category hourly"
+# EventBridge Rule to trigger news collection hourly (both finance and business)
+resource "aws_cloudwatch_event_rule" "hourly_news_trigger" {
+  name                = "${var.environment}-${var.project_name}-hourly-news"
+  description         = "Trigger news URL collection hourly"
   schedule_expression = "rate(1 hour)"
 
   tags = {
@@ -15,7 +15,7 @@ resource "aws_cloudwatch_event_rule" "hourly_finance_news_trigger" {
 
 # EventBridge Target for finance news
 resource "aws_cloudwatch_event_target" "finance_news_target" {
-  rule      = aws_cloudwatch_event_rule.hourly_finance_news_trigger.name
+  rule      = aws_cloudwatch_event_rule.hourly_news_trigger.name
   target_id = "FinanceNewsCollector"
   arn       = aws_lambda_function.data_collector.arn
   
@@ -24,31 +24,9 @@ resource "aws_cloudwatch_event_target" "finance_news_target" {
   })
 }
 
-# Lambda permission for EventBridge to invoke for finance news
-resource "aws_lambda_permission" "allow_eventbridge_finance" {
-  statement_id  = "AllowExecutionFromEventBridgeFinance"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.data_collector.function_name
-  principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.hourly_finance_news_trigger.arn
-}
-
-# EventBridge Rule to trigger business news collection hourly
-resource "aws_cloudwatch_event_rule" "hourly_business_news_trigger" {
-  name                = "${var.environment}-${var.project_name}-hourly-business-news"
-  description         = "Trigger news URL collection for business category hourly"
-  schedule_expression = "rate(1 hour)"
-
-  tags = {
-    Project     = var.project_name
-    Environment = var.environment
-    ManagedBy   = "Terraform"
-  }
-}
-
-# EventBridge Target for business news
+# EventBridge Target for business news (same rule, different target)
 resource "aws_cloudwatch_event_target" "business_news_target" {
-  rule      = aws_cloudwatch_event_rule.hourly_business_news_trigger.name
+  rule      = aws_cloudwatch_event_rule.hourly_news_trigger.name
   target_id = "BusinessNewsCollector"
   arn       = aws_lambda_function.data_collector.arn
   
@@ -57,11 +35,11 @@ resource "aws_cloudwatch_event_target" "business_news_target" {
   })
 }
 
-# Lambda permission for EventBridge to invoke for business news
-resource "aws_lambda_permission" "allow_eventbridge_business" {
-  statement_id  = "AllowExecutionFromEventBridgeBusiness"
+# Lambda permission for EventBridge to invoke
+resource "aws_lambda_permission" "allow_eventbridge_news" {
+  statement_id  = "AllowExecutionFromEventBridgeNews"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.data_collector.function_name
   principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.hourly_business_news_trigger.arn
+  source_arn    = aws_cloudwatch_event_rule.hourly_news_trigger.arn
 }
