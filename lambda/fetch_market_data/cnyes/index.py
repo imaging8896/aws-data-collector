@@ -23,14 +23,14 @@ class Index:
         STOCK = "STOCK"
 
     symbol: str
-    location: str
+    location: Location
     type: Type
 
     def __str__(self) -> str:
         return f"{self.location.value}:{self.symbol}:{self.type.value}"
     
     def __hash__(self) -> int:
-        return hash((self.symbol, self.location, self.type))
+        return hash((self.symbol, self.location.value, self.type))
 
     @classmethod
     def tw_stock(cls, stock_id):
@@ -41,7 +41,7 @@ class Index:
         return cls(symbol="TSE01", location=Index.Location.TW, type=Index.Type.INDEX)
 
 
-def get_indexes(indexes: list[Index], from_dt: datetime, to_dt: datetime):
+def get_trades(indexes: list[Index], from_dt: datetime, to_dt: datetime):
     symbols = ",".join(str(index) for index in indexes)
     url = f"https://ws.api.cnyes.com/ws/api/v1/charting/histories?symbols={symbols}&from={int(to_dt.timestamp())}&to={int(from_dt.timestamp())}&resolution=D"
 

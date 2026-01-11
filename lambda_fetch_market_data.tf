@@ -54,6 +54,7 @@ resource "aws_lambda_function" "fetch_market_data" {
     variables = {
       MARKET_DATA_TABLE_NAME = aws_dynamodb_table.market_data_table.name
       INVESTOR_DATA_TABLE_NAME = aws_dynamodb_table.investor_data_table.name
+      INDEX_DATA_TABLE_NAME = aws_dynamodb_table.index_data_table.name
       ENVIRONMENT         = var.environment
     }
   }
@@ -91,15 +92,25 @@ resource "aws_cloudwatch_event_rule" "fetch_market_data_schedule" {
 }
 
 # EventBridge target
-resource "aws_cloudwatch_event_target" "fetch_market_data_target" {
+resource "aws_cloudwatch_event_target" "fetch_trades_target" {
   rule      = aws_cloudwatch_event_rule.fetch_market_data_schedule.name
-  target_id = "FetchMarketDataLambda"
+  target_id = "FetchTradesLambda"
   arn       = aws_lambda_function.fetch_market_data.arn
 
   input = jsonencode({
-    data_type = "index",
+    data_type = "trades",
     index_names = ["tw_index", "2330"],
     from_days   = 7,
+  })
+}
+
+resource "aws_cloudwatch_event_target" "fetch_indexes_target" {
+  rule      = aws_cloudwatch_event_rule.fetch_market_data_schedule.name
+  target_id = "FetchIndexesLambda"
+  arn       = aws_lambda_function.fetch_market_data.arn
+
+  input = jsonencode({
+    data_type = "indexes"
   })
 }
 

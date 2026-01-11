@@ -8,8 +8,10 @@ import boto3
 dynamodb = boto3.resource('dynamodb')
 market_data_table_name = os.environ['MARKET_DATA_TABLE_NAME']
 investor_data_table_name = os.environ['INVESTOR_DATA_TABLE_NAME']
-market_data_table = dynamodb.Table(market_data_table_name)
-investor_data_table = dynamodb.Table(investor_data_table_name)
+index_data_table_name = os.environ['INDEX_DATA_TABLE_NAME']
+market_data_table = dynamodb.Table(market_data_table_name)  # type: ignore
+investor_data_table = dynamodb.Table(investor_data_table_name)  # type: ignore
+index_data_table = dynamodb.Table(index_data_table_name)  # type: ignore
 
 
 def handler(event, context):
@@ -46,10 +48,12 @@ def handler(event, context):
             from_days = int(event.get('from_days', 14))
             data_date = date.fromisoformat(event.get('data_date', date.today().isoformat()))
 
-        if data_type == "index":
-            get_index(index_names, from_days)
+        if data_type == "trades":
+            get_trades(index_names, from_days)
         elif data_type == "investor":
             get_investor(data_date)
+        elif data_type == "indexes":
+            get_indexes()
         else:
             raise ValueError(f"Unsupported data_type: {data_type}")
 
@@ -73,8 +77,8 @@ def handler(event, context):
         }
 
 
-def get_index(index_names, from_days):
-    from cnyes.index import Index, get_indexes
+def get_trades(index_names, from_days):
+    from cnyes.index import Index, get_trades
 
     def _to_index(name: str) -> Index:
         if name == "tw_index":
@@ -92,7 +96,7 @@ def get_index(index_names, from_days):
     from_timestamp = now - timedelta(days=from_days)
 
     print(f"Fetching market data for indexes {[str(idx) for idx in index_names]} from {from_timestamp} to {to_timestamp}")
-    data = get_indexes(index_names, from_dt=from_timestamp, to_dt=to_timestamp)
+    data = get_trades(index_names, from_dt=from_timestamp, to_dt=to_timestamp)
     
 
     for index, index_data in data.items():
@@ -128,6 +132,48 @@ def get_investor(data_date: date):
         print(f"Saved investor data for {data_date}\n{data}")
     else:
         print(f"No investor data available for {data_date}")
+
+
+def get_indexes():
+    from twse.index import get_indexes
+
+    print("Getting indexes data")
+
+    data = get_indexes()
+    
+    if not data:
+        print("No index data available")
+        return data
+    
+    # Get timestamp for all items
+    updated_at = int(datetime.now(timezone.utc).timestamp())
+    
+    # Save each index as a separate item with name+date as composite key
+    for index_name, index_data in data.items():
+        print(f"Index: {index_name}, Value: {index_data['value']}, Date: {index_data['date']}, Diff: {index_data['diff']}, Diff%: {index_data['diff_percent']}")
+        
+        # Update item with composite key (name, date)
+        # If the item exists, it will be updated; otherwise, it will be created
+        index_data_table.update_item(
+            Key={
+                'name': index_name,
+                'date': index_data['date']
+            },
+            UpdateExpression='SET #value = :value, #diff = :diff, diff_percent = :diff_percent, updated_at = :updated_at',
+            ExpressionAttributeNames={
+                '#value': 'value',  # 'value' is a reserved word in DynamoDB
+                '#diff': 'diff'     # 'diff' might be reserved
+            },
+            ExpressionAttributeValues={
+                ':value': index_data['value'],
+                ':diff': index_data['diff'],
+                ':diff_percent': index_data['diff_percent'],
+                ':updated_at': updated_at
+            }
+        )
+    
+    print(f"Saved/Updated {len(data)} indexes")
+    return data
 
 
 if __name__ == "__main__":
