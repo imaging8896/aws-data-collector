@@ -78,7 +78,7 @@ def handler(event, context):
 
 
 def get_trades(index_names, from_days):
-    from cnyes.index import Index, get_trades
+    from cnyes.trade import Index, get_trades
 
     def _to_index(name: str) -> Index:
         if name == "tw_index":
