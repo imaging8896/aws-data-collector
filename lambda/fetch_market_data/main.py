@@ -53,7 +53,7 @@ def handler(event, context):
         elif data_type == "investor":
             get_investor(data_date)
         elif data_type == "indexes":
-            get_indexes()
+            get_indexes(data_date)
         elif data_type == "stock_group_trade":
             get_stock_group_trade(data_date)
         else:
@@ -136,12 +136,12 @@ def get_investor(data_date: date):
         print(f"No investor data available for {data_date}")
 
 
-def get_indexes():
+def get_indexes(data_date: date):
     from twse.index import get_indexes
 
     print("Getting indexes data")
 
-    data = get_indexes()
+    data = get_indexes(data_date)
     
     if not data:
         print("No index data available")
@@ -224,11 +224,33 @@ def get_stock_group_trade(data_date: date):
 
 if __name__ == "__main__":
     # Test locally
-    test_event = {
-        "data_type": "investor",
-        "index_names": ["tw_index", "2330"],
-        "from_days": 300,
-        "data_date": "2026-01-02",
-    }
-    result = handler(test_event, None)
-    print(json.dumps(json.loads(result['body']), indent=2, ensure_ascii=False))
+    cur_date = date.today()
+    for _ in range(25):
+        while True:  # Skip weekends
+            if cur_date.weekday() >= 5:
+                cur_date -= timedelta(days=1)
+                continue
+
+            if not get_stock_group_trade(cur_date):
+                cur_date -= timedelta(days=1)
+                continue
+            test_event = {
+                "data_type": "indexes",
+                "index_names": ["tw_index", "2330"],
+                "from_days": 300,
+                "data_date": cur_date.isoformat(),
+            }
+            result = handler(test_event, None)
+            print(json.dumps(json.loads(result['body']), indent=2, ensure_ascii=False))
+
+            test_event = {
+                "data_type": "stock_group_trade",
+                "index_names": ["tw_index", "2330"],
+                "from_days": 300,
+                "data_date": cur_date.isoformat(),
+            }
+            result = handler(test_event, None)
+            print(json.dumps(json.loads(result['body']), indent=2, ensure_ascii=False))
+            break
+        cur_date -= timedelta(days=1)
+            

@@ -1,11 +1,11 @@
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 
 from curl_cffi import requests
 
 
-def get_indexes():
-    url = "https://app.twse.com.tw/v2/api/zh/exchange/indexInfo?source=14b22ffaf9f5040559c8c9d3c6f48833&lang=zh"
+def get_indexes(data_date: date):
+    url = f"https://app.twse.com.tw/v2/api/zh/exchange/indexInfo?source=14b22ffaf9f5040559c8c9d3c6f48833&lang=zh&date={data_date.isoformat().replace('-', '')}"
 
     response = requests.get(url, impersonate="chrome")
 
