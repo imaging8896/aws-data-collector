@@ -13,10 +13,12 @@ secrets_client = boto3.client('secretsmanager')
 
 news_table_name = os.environ['DYNAMODB_TABLE_NAME']
 stats_table_name = os.environ['DYNAMODB_STATS_TABLE_NAME']
+index_data_table_name = os.environ['DYNAMODB_INDEX_TABLE_NAME']
 gemini_secret_name = os.environ.get('GEMINI_API_KEY_SECRET_NAME')
 
-news_table = dynamodb.Table(news_table_name)
-stats_table = dynamodb.Table(stats_table_name)
+news_table = dynamodb.Table(news_table_name) # type: ignore
+stats_table = dynamodb.Table(stats_table_name) # type: ignore
+index_data_table = dynamodb.Table(index_data_table_name) # type: ignore
 
 # Initialize Gemini client (lazy loading)
 _gemini_client = None
@@ -38,6 +40,105 @@ def decimal_default(obj):
     if isinstance(obj, Decimal):
         return float(obj)
     raise TypeError
+
+
+def calculate_rsi(prices, period=14):
+    """
+    Calculate RSI (Relative Strength Index) for given prices
+    prices: list of Decimal values (newest to oldest)
+    period: RSI period (default 14)
+    Returns: RSI value (0-100) or None if insufficient data
+    """
+    if len(prices) < period + 1:
+        return None
+    
+    # Convert to float for calculation
+    prices = [float(p) for p in prices]
+    
+    # Calculate price changes
+    deltas = [prices[i] - prices[i + 1] for i in range(len(prices) - 1)]
+    
+    # Separate gains and losses
+    gains = [d if d > 0 else 0 for d in deltas[:period]]
+    losses = [-d if d < 0 else 0 for d in deltas[:period]]
+    
+    # Calculate average gain and loss
+    avg_gain = sum(gains) / period
+    avg_loss = sum(losses) / period
+    
+    if avg_loss == 0:
+        return 100.0
+    
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    
+    return round(rsi, 2)
+
+
+def get_index_rsi_for_date(date_str, periods=[5, 9, 14, 22]):
+    """
+    Calculate RSI for all indexes on a specific date
+    Returns dict: {index_name: {period: rsi_value}}
+    """
+    if not index_data_table:
+        print("Index data table not configured")
+        return {}
+    
+    try:
+        target_date = datetime.strptime(date_str, '%Y-%m-%d')
+        rsi_results = {}
+        
+        # Get all unique index names
+        # Query by date to get all indexes for that date
+        response = index_data_table.query(
+            IndexName='DateIndex',
+            KeyConditionExpression='#date = :date',
+            ExpressionAttributeNames={'#date': 'date'},
+            ExpressionAttributeValues={':date': date_str}
+        )
+        
+        index_names = [item['name'] for item in response.get('Items', [])]
+        
+        # Calculate RSI for each index
+        max_period = max(periods)
+        for index_name in index_names:
+            # Get historical data for this index (need max_period + 1 days)
+            historical_prices = []
+            
+            # Query backwards from target date
+            for days_back in range(max_period + 1):
+                query_date = (target_date - timedelta(days=days_back)).strftime('%Y-%m-%d')
+                
+                try:
+                    item_response = index_data_table.get_item(
+                        Key={
+                            'name': index_name,
+                            'date': query_date
+                        }
+                    )
+                    
+                    if 'Item' in item_response and 'value' in item_response['Item']:
+                        historical_prices.append(item_response['Item']['value'])
+                except Exception as e:
+                    print(f"Error getting data for {index_name} on {query_date}: {e}")
+                    continue
+            
+            # Calculate RSI for each period
+            if len(historical_prices) > 0:
+                rsi_results[index_name] = {}
+                for period in periods:
+                    rsi_value = calculate_rsi(historical_prices, period)
+                    if rsi_value is not None:
+                        rsi_results[index_name][f'RSI_{period}'] = Decimal(str(rsi_value))
+        
+        print(f"Calculated RSI for {len(rsi_results)} indexes on {date_str}")
+        return rsi_results
+        
+    except Exception as e:
+        print(f"Error calculating RSI for date {date_str}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {}
 
 
 def refine_keywords_with_ai(keywords_list):
@@ -258,8 +359,8 @@ def aggregate_by_date(items):
         
         # 2. Institutional Investor Behavior
         inst_behavior = analysis.get('institutional_investor_behavior', {})
-        if inst_behavior:
-            action = inst_behavior.get('action', '').lower()
+        if inst_behavior and inst_behavior.get('action'):
+            action = inst_behavior['action'].lower()
             for sector in inst_behavior.get('target_sectors', []):
                 if '買' in action or 'buy' in action:
                     daily_stats[date]['institutional_behavior'][sector]['buy'] += 1
@@ -359,15 +460,16 @@ def save_daily_stats(date, stats):
         # Check if record exists
         existing = stats_table.get_item(Key={'date': date})
         
+        # Calculate RSI for all indexes
+        rsi_data = get_index_rsi_for_date(date)
+        
         if 'Item' in existing:
-            # Update existing record
-            stats_table.update_item(
-            Key={'date': date},
-            UpdateExpression='SET updated_at = :updated_at, total_news = :total_news, '
-                     'sector_rotation = :sector_rotation, '
-                     'institutional_behavior = :institutional_behavior, '
-                     'sentiment = :sentiment, keywords = :keywords, stocks = :stocks',
-            ExpressionAttributeValues={
+            # Update existing record with RSI
+            update_expr = 'SET updated_at = :updated_at, total_news = :total_news, ' \
+                         'sector_rotation = :sector_rotation, ' \
+                         'institutional_behavior = :institutional_behavior, ' \
+                         'sentiment = :sentiment, keywords = :keywords, stocks = :stocks'
+            attr_values = {
                 ':updated_at': int(datetime.now().timestamp()),
                 ':total_news': Decimal(str(stats['total_news'])),
                 ':sector_rotation': sector_rotation,
@@ -376,10 +478,19 @@ def save_daily_stats(date, stats):
                 ':keywords': keywords,
                 ':stocks': stocks
             }
+            
+            if rsi_data:
+                update_expr += ', RSI = :rsi'
+                attr_values[':rsi'] = rsi_data
+            
+            stats_table.update_item(
+                Key={'date': date},
+                UpdateExpression=update_expr,
+                ExpressionAttributeValues=attr_values
             )
         else:
-            # Create new record
-            stats_table.put_item(Item={
+            # Create new record with RSI
+            item = {
                 'date': date,
                 'updated_at': int(datetime.now().timestamp()),
                 'total_news': Decimal(str(stats['total_news'])),
@@ -388,9 +499,14 @@ def save_daily_stats(date, stats):
                 'sentiment': sentiment,
                 'keywords': keywords,
                 'stocks': stocks
-            })
+            }
+            
+            if rsi_data:
+                item['RSI'] = rsi_data
+            
+            stats_table.put_item(Item=item)
         
-        print(f"Saved statistics for {date}: {stats['total_news']} news items")
+        print(f"Saved statistics for {date}: {stats['total_news']} news items with RSI for {len(rsi_data)} indexes")
         
     except Exception as e:
         print(f"Error saving stats for {date}: {str(e)}")

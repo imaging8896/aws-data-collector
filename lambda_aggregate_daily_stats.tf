@@ -55,6 +55,7 @@ resource "aws_lambda_function" "aggregate_stats" {
     variables = {
       DYNAMODB_TABLE_NAME          = aws_dynamodb_table.news_urls_table.name
       DYNAMODB_STATS_TABLE_NAME    = aws_dynamodb_table.daily_stats_table.name
+      DYNAMODB_INDEX_TABLE_NAME    = aws_dynamodb_table.index_data_table.name
       GEMINI_API_KEY_SECRET_NAME   = aws_secretsmanager_secret.gemini_api_key.name
       ENVIRONMENT                  = var.environment
     }
