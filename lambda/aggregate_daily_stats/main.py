@@ -184,10 +184,13 @@ def get_index_rsi_for_date(date_str, periods=[5, 9, 14, 22]):
         max_period = max(periods)
         for index_name in index_names:
             # Get historical data for this index (need max_period + 1 days)
+            # Skip weekends and holidays by querying until we get enough valid prices
             historical_prices = []
+            days_back = 0
+            max_attempts = max_period * 2  # Try up to 2x the period to account for holidays
             
-            # Query backwards from target date
-            for days_back in range(max_period + 1):
+            # Query backwards from target date until we have enough prices
+            while len(historical_prices) < max_period + 1 and days_back < max_attempts:
                 query_date = (target_date - timedelta(days=days_back)).strftime('%Y-%m-%d')
                 
                 try:
@@ -202,10 +205,12 @@ def get_index_rsi_for_date(date_str, periods=[5, 9, 14, 22]):
                         historical_prices.append(item_response['Item']['value'])
                 except Exception as e:
                     print(f"Error getting data for {index_name} on {query_date}: {e}")
-                    continue
+                
+                days_back += 1
             
             # Calculate RSI for each period
-            if len(historical_prices) > 0:
+            if len(historical_prices) >= max_period + 1:
+                print(f"{index_name}: Collected {len(historical_prices)} prices from {days_back} days")
                 rsi_data = {}
                 for period in periods:
                     rsi_value = calculate_rsi(historical_prices, period)
@@ -221,6 +226,8 @@ def get_index_rsi_for_date(date_str, periods=[5, 9, 14, 22]):
                     }
                 else:
                     rsi_results[index_name] = rsi_data
+            else:
+                print(f"{index_name}: Insufficient data - only {len(historical_prices)} prices from {days_back} days (need {max_period + 1})")
         
         print(f"Calculated RSI for {len(rsi_results)} indexes on {date_str}")
         return rsi_results
@@ -250,9 +257,9 @@ def refine_keywords_with_ai(keywords_list):
         # 1. 先在本地統計頻率
         counter = Counter(keywords_list)
         
-        # 2. 只取頻率最高的 100 個關鍵字送給 AI (避免 Token 爆炸)
+        # 2. 只取頻率最高的 70 個關鍵字送給 AI (避免 Token 爆炸)
         # 剩下的低頻關鍵字通常對趨勢分析影響較小，可以直接忽略或歸類為其他
-        top_keywords = [k for k, v in counter.most_common(100)]
+        top_keywords = [k for k, v in counter.most_common(70)]
 
         keywords_str = ', '.join(top_keywords)
         
@@ -535,7 +542,7 @@ def save_daily_stats(date, stats):
         raw_keywords = stats['keywords']
         refined_keywords = refine_keywords_with_ai(raw_keywords)
         keywords = [x for x in refined_keywords if x['keyword'].lower() not in {"other", "其他"}]
-        
+
         # Convert stocks data
         stocks = {
             data['name'] if key.lower() in {"null", "n/a"} or not key else key: {
@@ -607,7 +614,7 @@ def save_daily_stats(date, stats):
 
 if __name__ == "__main__":
     test_event = {
-        "days": 14
+        "days": 2
     }
     result = handler(test_event, None)
     print(json.dumps(json.loads(result['body']), indent=2, ensure_ascii=False))
