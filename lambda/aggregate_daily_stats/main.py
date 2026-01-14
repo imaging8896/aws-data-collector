@@ -75,10 +75,91 @@ def calculate_rsi(prices, period=14):
     return round(rsi, 2)
 
 
+def analyze_rsi_signals(rsi_data):
+    """
+    Analyze RSI values and generate trading signals
+    rsi_data: dict with RSI_5, RSI_9, RSI_14, RSI_22 keys
+    Returns: list of signal strings
+    """
+    signals = []
+    
+    # Extract RSI values (handle both Decimal and float)
+    try:
+        rsi_5 = float(rsi_data.get('RSI_5', 0))
+        rsi_9 = float(rsi_data.get('RSI_9', 0))
+        rsi_14 = float(rsi_data.get('RSI_14', 0))
+        rsi_22 = float(rsi_data.get('RSI_22', 0))
+    except (ValueError, TypeError):
+        return signals
+    
+    # 檢查是否所有 RSI 值都有效
+    if not all([rsi_5, rsi_9, rsi_14, rsi_22]):
+        return signals
+    
+    # 1. 多頭排列: RSI 5 > 9 > 14 > 22
+    if rsi_5 > rsi_9 > rsi_14 > rsi_22:
+        signals.append('多頭排列')
+    
+    # 2. 空頭排列: RSI 5 < 9 < 14 < 22
+    if rsi_5 < rsi_9 < rsi_14 < rsi_22:
+        signals.append('空頭排列')
+    
+    # 3. 短線超買: RSI 5 or 9 > 85
+    if rsi_5 > 85 or rsi_9 > 85:
+        signals.append('短線超買')
+    
+    # 4. 超買: RSI 14 or 22 > 70
+    if rsi_14 > 70 or rsi_22 > 70:
+        signals.append('超買')
+    
+    # 5. 止跌: RSI < 30
+    if rsi_5 < 30 or rsi_9 < 30:
+        signals.append('止跌')
+    
+    # 6. 趨勢轉折: RSI 22 在 50 附近 (45-55)
+    if 45 <= rsi_22 <= 55:
+        signals.append('趨勢轉折')
+    
+    # 額外訊號
+    
+    # 7. 短線超賣: RSI 5 or 9 < 15
+    if rsi_5 < 15 or rsi_9 < 15:
+        signals.append('短線超賣')
+    
+    # 8. 超賣: RSI 14 or 22 < 30
+    if rsi_14 < 30 or rsi_22 < 30:
+        signals.append('超賣')
+    
+    # 9. 黃金交叉: 短期 RSI 向上穿越長期 RSI (簡化版: 5 > 9 且 9 > 14)
+    if rsi_5 > rsi_9 and rsi_9 > rsi_14 and not (rsi_5 > rsi_9 > rsi_14 > rsi_22):
+        signals.append('短線轉強')
+    
+    # 10. 死亡交叉: 短期 RSI 向下穿越長期 RSI (簡化版: 5 < 9 且 9 < 14)
+    if rsi_5 < rsi_9 and rsi_9 < rsi_14 and not (rsi_5 < rsi_9 < rsi_14 < rsi_22):
+        signals.append('短線轉弱')
+    
+    # 11. 背離訊號: RSI 14 與 RSI 22 方向不一致
+    if abs(rsi_14 - rsi_22) > 15:
+        if rsi_14 > rsi_22:
+            signals.append('短期強於長期')
+        else:
+            signals.append('短期弱於長期')
+    
+    # 12. 強勢整理: 所有 RSI > 50 且 < 70
+    if all(50 < rsi < 70 for rsi in [rsi_5, rsi_9, rsi_14, rsi_22]):
+        signals.append('強勢整理')
+    
+    # 13. 弱勢整理: 所有 RSI > 30 且 < 50
+    if all(30 < rsi < 50 for rsi in [rsi_5, rsi_9, rsi_14, rsi_22]):
+        signals.append('弱勢整理')
+    
+    return signals
+
+
 def get_index_rsi_for_date(date_str, periods=[5, 9, 14, 22]):
     """
     Calculate RSI for all indexes on a specific date
-    Returns dict: {index_name: {period: rsi_value}}
+    Returns dict: {index_name: {RSI_X: value, signals: [...]}}
     """
     if not index_data_table:
         print("Index data table not configured")
@@ -125,11 +206,21 @@ def get_index_rsi_for_date(date_str, periods=[5, 9, 14, 22]):
             
             # Calculate RSI for each period
             if len(historical_prices) > 0:
-                rsi_results[index_name] = {}
+                rsi_data = {}
                 for period in periods:
                     rsi_value = calculate_rsi(historical_prices, period)
                     if rsi_value is not None:
-                        rsi_results[index_name][f'RSI_{period}'] = Decimal(str(rsi_value))
+                        rsi_data[f'RSI_{period}'] = Decimal(str(rsi_value))
+                
+                # Analyze signals if we have all RSI values
+                if len(rsi_data) == len(periods):
+                    signals = analyze_rsi_signals(rsi_data)
+                    rsi_results[index_name] = {
+                        **rsi_data,
+                        'signals': signals
+                    }
+                else:
+                    rsi_results[index_name] = rsi_data
         
         print(f"Calculated RSI for {len(rsi_results)} indexes on {date_str}")
         return rsi_results
