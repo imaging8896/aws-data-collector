@@ -46,8 +46,8 @@ resource "aws_lambda_function" "aggregate_stats" {
   handler         = "main.handler"
   source_code_hash = data.archive_file.lambda_aggregate_stats_zip.output_base64sha256
   runtime         = var.lambda_runtime
-  memory_size     = 128
-  timeout         = 60
+  memory_size     = 156
+  timeout         = 200
   architectures    = ["arm64"]
   layers           = [aws_lambda_layer_version.aggregate_stats_dependencies_layer.arn]
 
@@ -116,6 +116,9 @@ resource "aws_lambda_permission" "allow_eventbridge_aggregate_stats" {
 # Lambda Destination: Trigger chart generator on success
 resource "aws_lambda_function_event_invoke_config" "aggregate_stats_destination" {
   function_name = aws_lambda_function.aggregate_stats.function_name
+  
+  # Disable automatic retries
+  maximum_retry_attempts = 0
 
   destination_config {
     on_success {
