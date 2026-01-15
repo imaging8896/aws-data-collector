@@ -451,7 +451,7 @@ def aggregate_by_date(items):
                 daily_stats[date]['sector_rotation'][sector]['inflow'] = 0
                 daily_stats[date]['sector_rotation'][sector]['outflow'] = 0
             else:
-                raise ValueError(f"Unknown trend value: {trend}")
+                print(f"Unknown trend value: {trend} for {item.get('url', '')}")
             
             daily_stats[date]['sector_rotation'][sector]['count'] += 1
         
