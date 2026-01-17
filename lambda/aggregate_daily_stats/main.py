@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from decimal import Decimal
 from collections import defaultdict, Counter
 import boto3
@@ -171,14 +171,22 @@ def get_index_rsi_for_date(date_str, periods=[5, 9, 14, 22]):
         
         # Get all unique index names
         # Query by date to get all indexes for that date
-        response = index_data_table.query(
-            IndexName='DateIndex',
-            KeyConditionExpression='#date = :date',
-            ExpressionAttributeNames={'#date': 'date'},
-            ExpressionAttributeValues={':date': date_str}
-        )
-        
-        index_names = [item['name'] for item in response.get('Items', [])]
+        request_date = date_str
+        index_names = []
+        for _ in range(20):
+            response = index_data_table.query(
+                IndexName='DateIndex',
+                KeyConditionExpression='#date = :date',
+                ExpressionAttributeNames={'#date': 'date'},
+                ExpressionAttributeValues={':date': date_str}
+            )
+            if items := response.get('Items', []):
+                index_names.extend([item['name'] for item in items])
+                break
+            date_str = (date.fromisoformat(date_str) - timedelta(days=1)).isoformat()
+        else:
+            print(f"No index data found around date {request_date} to {date_str}")
+            return
         
         # Calculate RSI for each index
         max_period = max(periods)
@@ -257,9 +265,11 @@ def refine_keywords_with_ai(keywords_list):
         # 1. 先在本地統計頻率
         counter = Counter(keywords_list)
         
-        # 2. 只取頻率最高的 70 個關鍵字送給 AI (避免 Token 爆炸)
+        # 2. 只取頻率最高的 45 個關鍵字送給 AI (避免 Token 爆炸)
         # 剩下的低頻關鍵字通常對趨勢分析影響較小，可以直接忽略或歸類為其他
-        top_keywords = [k for k, v in counter.most_common(70)]
+        most_common = [(k, v) for k, v in counter.most_common(45) if v > 1]
+        print(f"Refining {len(most_common)} keywords with AI\n{most_common}")
+        top_keywords = [k for k, _ in most_common]
 
         keywords_str = ', '.join(top_keywords)
         
