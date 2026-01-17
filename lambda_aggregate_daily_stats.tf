@@ -46,8 +46,8 @@ resource "aws_lambda_function" "aggregate_stats" {
   handler         = "main.handler"
   source_code_hash = data.archive_file.lambda_aggregate_stats_zip.output_base64sha256
   runtime         = var.lambda_runtime
-  memory_size     = 156
-  timeout         = 200
+  memory_size     = 256
+  timeout         = 300
   architectures    = ["arm64"]
   layers           = [aws_lambda_layer_version.aggregate_stats_dependencies_layer.arn]
 
