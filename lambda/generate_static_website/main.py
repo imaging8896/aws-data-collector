@@ -22,6 +22,18 @@ def decimal_default(obj):
     raise TypeError
 
 
+def get_rsi_color(rsi_value):
+    """Get color based on RSI value"""
+    if rsi_value >= 70:
+        return '#EF476F'  # Overbought - Red
+    elif rsi_value >= 50:
+        return '#06D6A0'  # Bullish - Green
+    elif rsi_value >= 30:
+        return '#FFD166'  # Neutral - Yellow
+    else:
+        return '#4ECDC4'  # Oversold - Cyan
+
+
 def handler(event, context):
     """
     Generate static HTML page from news analysis charts in DynamoDB
@@ -80,12 +92,15 @@ def handler(event, context):
             f"https://{cloudfront_domain}/{key}" for key in chart_s3_keys
         ]
         
+        # Get RSI data
+        rsi_data = item.get('RSI', {})
+        
         # Get date range
         start_date = (date.fromisoformat(request_date) - timedelta(days=days - 1)).isoformat()
         end_date = request_date
         
         # Generate HTML
-        html_content = generate_html(request_date, start_date, end_date, days, chart_urls)
+        html_content = generate_html(request_date, start_date, end_date, days, chart_urls, rsi_data)
         
         # Upload to S3
         html_key = f"charts/{request_date}.html"
@@ -177,9 +192,9 @@ def handler(event, context):
         }
 
 
-def generate_html(request_date, start_date, end_date, days, chart_urls):
+def generate_html(request_date, start_date, end_date, days, chart_urls, rsi_data):
     """
-    Generate HTML page to display the investment analysis charts
+    Generate HTML page to display the investment analysis charts and RSI signals
     """
     # Chart titles mapping
     chart_titles = [
@@ -198,6 +213,84 @@ def generate_html(request_date, start_date, end_date, days, chart_urls):
         <div class="chart-container">
             <h2 class="chart-title">{title}</h2>
             <img src="{chart_url}" alt="{title}" onerror="this.onerror=null; this.src=''; this.alt='圖表載入失敗';">
+        </div>
+        """
+    
+    # Build RSI section
+    rsi_section = ""
+    if rsi_data:
+        rsi_cards = ""
+        for index_name, index_rsi in rsi_data.items():
+            # Get RSI values
+            rsi_5 = float(index_rsi.get('RSI_5', 0))
+            rsi_9 = float(index_rsi.get('RSI_9', 0))
+            rsi_14 = float(index_rsi.get('RSI_14', 0))
+            rsi_22 = float(index_rsi.get('RSI_22', 0))
+            signals = index_rsi.get('signals', [])
+            
+            # Determine overall status color
+            if '多頭排列' in signals or '短線轉強' in signals:
+                status_color = '#06D6A0'  # Green
+                status_icon = '🟢'
+            elif '空頭排列' in signals or '短線轉弱' in signals:
+                status_color = '#EF476F'  # Red
+                status_icon = '🔴'
+            else:
+                status_color = '#FFD166'  # Yellow
+                status_icon = '🟡'
+            
+            # Build signal badges
+            signal_badges = ""
+            for signal in signals:
+                # Assign colors based on signal type
+                if signal in ['多頭排列', '短線轉強', '強勢整理']:
+                    badge_color = '#06D6A0'
+                elif signal in ['空頭排列', '短線轉弱', '弱勢整理']:
+                    badge_color = '#EF476F'
+                elif signal in ['超買', '短線超買']:
+                    badge_color = '#FF6B6B'
+                elif signal in ['超賣', '短線超賣', '止跌']:
+                    badge_color = '#4ECDC4'
+                else:
+                    badge_color = '#95A5A6'
+                
+                signal_badges += f'<span class="signal-badge" style="background-color: {badge_color};">{signal}</span>'
+            
+            rsi_cards += f"""
+            <div class="rsi-card">
+                <div class="rsi-header" style="border-left: 4px solid {status_color};">
+                    <h3>{status_icon} {index_name}</h3>
+                </div>
+                <div class="rsi-values">
+                    <div class="rsi-value">
+                        <div class="rsi-label">RSI 5</div>
+                        <div class="rsi-number" style="color: {get_rsi_color(rsi_5)};">{rsi_5:.2f}</div>
+                    </div>
+                    <div class="rsi-value">
+                        <div class="rsi-label">RSI 9</div>
+                        <div class="rsi-number" style="color: {get_rsi_color(rsi_9)};">{rsi_9:.2f}</div>
+                    </div>
+                    <div class="rsi-value">
+                        <div class="rsi-label">RSI 14</div>
+                        <div class="rsi-number" style="color: {get_rsi_color(rsi_14)};">{rsi_14:.2f}</div>
+                    </div>
+                    <div class="rsi-value">
+                        <div class="rsi-label">RSI 22</div>
+                        <div class="rsi-number" style="color: {get_rsi_color(rsi_22)};">{rsi_22:.2f}</div>
+                    </div>
+                </div>
+                <div class="rsi-signals">
+                    {signal_badges if signal_badges else '<span class="signal-badge" style="background-color: #95A5A6;">無明顯訊號</span>'}
+                </div>
+            </div>
+            """
+        
+        rsi_section = f"""
+        <div class="rsi-section">
+            <h2 class="section-title">📊 指數 RSI 技術訊號</h2>
+            <div class="rsi-grid">
+                {rsi_cards}
+            </div>
         </div>
         """
     
@@ -305,6 +398,78 @@ def generate_html(request_date, start_date, end_date, days, chart_urls):
             padding: 20px;
             font-size: 0.9em;
         }}
+        .rsi-section {{
+            padding: 40px;
+            background: #f8f9fa;
+        }}
+        .section-title {{
+            color: #2E86AB;
+            font-size: 2em;
+            text-align: center;
+            margin-bottom: 30px;
+            font-weight: bold;
+        }}
+        .rsi-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }}
+        .rsi-card {{
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }}
+        .rsi-card:hover {{
+            transform: translateY(-5px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+        }}
+        .rsi-header {{
+            padding: 20px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        }}
+        .rsi-header h3 {{
+            margin: 0;
+            font-size: 1.3em;
+            color: #2c3e50;
+        }}
+        .rsi-values {{
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            padding: 20px;
+        }}
+        .rsi-value {{
+            text-align: center;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }}
+        .rsi-label {{
+            font-size: 0.85em;
+            color: #6c757d;
+            margin-bottom: 5px;
+        }}
+        .rsi-number {{
+            font-size: 1.8em;
+            font-weight: bold;
+        }}
+        .rsi-signals {{
+            padding: 15px 20px 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }}
+        .signal-badge {{
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            color: white;
+            font-weight: 500;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }}
         @media (max-width: 768px) {{
             .header h1 {{
                 font-size: 1.8em;
@@ -313,6 +478,12 @@ def generate_html(request_date, start_date, end_date, days, chart_urls):
                 grid-template-columns: 1fr;
             }}
             .chart-container {{
+                padding: 20px;
+            }}
+            .rsi-grid {{
+                grid-template-columns: 1fr;
+            }}
+            .rsi-section {{
                 padding: 20px;
             }}
         }}
@@ -339,6 +510,8 @@ def generate_html(request_date, start_date, end_date, days, chart_urls):
                 <div class="value">{len(chart_urls)}</div>
             </div>
         </div>
+        
+        {rsi_section}
         
         {chart_sections}
         
