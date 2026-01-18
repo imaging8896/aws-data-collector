@@ -14,7 +14,7 @@ def get_indexes(data_date: date):
     
     data = response.json()
 
-    print(f"Got data {data['api_name']}")
+    print(f"Got data {data}")
     # "items": [
     #     {
     #         "idx_name": "寶島股價指數",
@@ -33,4 +33,5 @@ def get_indexes(data_date: date):
             'diff_percent': Decimal(index_data['idx_mark'] + index_data['idx_diff_percent'].replace(',', '')),
         }
         for index_data in data['items']
+        if index_data['idx_today'].strip() != '--'
     }
