@@ -42,10 +42,17 @@ def get_stock_group_trade(data_date: date):
     # ],
 
     return {
-        name.strip().replace('指數', ''): {
+        _process_name(name): {
             'shares': Decimal(shares.replace(',', '')),
             'amount': Decimal(amount.replace(',', '')),
             'transactions': Decimal(transactions.replace(',', '')),
         }
         for name, shares, amount, transactions, _ in data['data']
     }
+
+
+def _process_name(raw_name: str) -> str:
+    raw_name = raw_name.strip().replace('指數', '')
+    if raw_name == '航運業類':
+        return '航運類'
+    return raw_name
