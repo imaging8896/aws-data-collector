@@ -219,14 +219,61 @@ def generate_html(request_date, start_date, end_date, days, chart_urls, rsi_data
     # Build RSI section
     rsi_section = ""
     if rsi_data:
+        # Define display order for indexes
+        priority_order = [
+            '發行量加權股價',
+            '臺灣50',
+            '臺灣中型100',
+            '小型股300',
+            '臺灣高股息',
+        ]
+        
+        # Sort indexes by priority
+        sorted_indexes = []
+        remaining_indexes = []
+        
+        for index_name in rsi_data.keys():
+            if index_name in priority_order:
+                sorted_indexes.append((priority_order.index(index_name), index_name))
+            else:
+                # Put indexes ending with "類" at the end
+                if index_name.endswith('類'):
+                    remaining_indexes.append((1, index_name))  # Category type, sort by name
+                # else:
+                #     remaining_indexes.append((0, index_name))  # Other types first
+        
+        # Sort priority indexes by their order
+        sorted_indexes.sort(key=lambda x: x[0])
+        # Sort remaining indexes by type then name
+        remaining_indexes.sort(key=lambda x: (x[0], x[1]))
+        
+        # Combine the lists
+        final_order = [name for _, name in sorted_indexes] + [name for _, name in remaining_indexes]
+        
         rsi_cards = ""
-        for index_name, index_rsi in rsi_data.items():
+        for index_name in final_order:
+            index_rsi = rsi_data[index_name]
             # Get RSI values
             rsi_5 = float(index_rsi.get('RSI_5', 0))
             rsi_9 = float(index_rsi.get('RSI_9', 0))
             rsi_14 = float(index_rsi.get('RSI_14', 0))
             rsi_22 = float(index_rsi.get('RSI_22', 0))
             signals = index_rsi.get('signals', [])
+            medium_strategy = index_rsi.get('medium_strategy', {})
+            short_strategy = index_rsi.get('short_strategy', {})
+            
+            # Get MA values
+            ma_5 = float(index_rsi.get('MA_5', 0))
+            ma_20 = float(index_rsi.get('MA_20', 0))
+            ma_60 = float(index_rsi.get('MA_60', 0))
+            
+            # Get medium strategy signals
+            medium_buy = medium_strategy.get('buy_signal', False)
+            medium_sell = medium_strategy.get('sell_signal', False)
+            
+            # Get short strategy signals
+            short_buy = short_strategy.get('buy_signal', False)
+            short_sell = short_strategy.get('sell_signal', False)
             
             # Determine overall status color
             if '多頭排列' in signals or '短線轉強' in signals:
@@ -241,6 +288,24 @@ def generate_html(request_date, start_date, end_date, days, chart_urls, rsi_data
             
             # Build signal badges
             signal_badges = ""
+            
+            # Add medium-term strategy signal badges first
+            if medium_buy:
+                color = '#10B981'  # Emerald green
+                signal_badges += f'<span class="signal-badge strategy-buy" style="background-color: {color}; font-weight: bold;">💰 中線買入</span>'
+            if medium_sell:
+                color = '#EF4444'  # Red
+                signal_badges += f'<span class="signal-badge strategy-sell" style="background-color: {color}; font-weight: bold;">⚠️ 中線出場</span>'
+            
+            # Add short-term strategy signal badges
+            if short_buy:
+                color = '#059669'  # Dark green
+                signal_badges += f'<span class="signal-badge strategy-buy" style="background-color: {color}; font-weight: bold;">⚡ 短線買入</span>'
+            if short_sell:
+                color = '#DC2626'  # Red
+                signal_badges += f'<span class="signal-badge strategy-sell" style="background-color: {color}; font-weight: bold;">🚨 短線出場</span>'
+            
+            # Add technical signals
             for signal in signals:
                 # Assign colors based on signal type
                 if signal in ['多頭排列', '短線轉強', '強勢整理']:
@@ -277,6 +342,20 @@ def generate_html(request_date, start_date, end_date, days, chart_urls, rsi_data
                     <div class="rsi-value">
                         <div class="rsi-label">RSI 22</div>
                         <div class="rsi-number" style="color: {get_rsi_color(rsi_22)};">{rsi_22:.2f}</div>
+                    </div>
+                </div>
+                <div class="ma-values">
+                    <div class="ma-value">
+                        <div class="ma-label">MA 5</div>
+                        <div class="ma-number">{ma_5:.2f}</div>
+                    </div>
+                    <div class="ma-value">
+                        <div class="ma-label">MA 20</div>
+                        <div class="ma-number">{ma_20:.2f}</div>
+                    </div>
+                    <div class="ma-value">
+                        <div class="ma-label">MA 60</div>
+                        <div class="ma-number">{ma_60:.2f}</div>
                     </div>
                 </div>
                 <div class="rsi-signals">
@@ -454,6 +533,28 @@ def generate_html(request_date, start_date, end_date, days, chart_urls, rsi_data
         .rsi-number {{
             font-size: 1.8em;
             font-weight: bold;
+        }}
+        .ma-values {{
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            padding: 0 20px 15px;
+        }}
+        .ma-value {{
+            text-align: center;
+            padding: 8px;
+            background: #e8f4f8;
+            border-radius: 6px;
+        }}
+        .ma-label {{
+            font-size: 0.8em;
+            color: #6c757d;
+            margin-bottom: 3px;
+        }}
+        .ma-number {{
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #2E86AB;
         }}
         .rsi-signals {{
             padding: 15px 20px 20px;

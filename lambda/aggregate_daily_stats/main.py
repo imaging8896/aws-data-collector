@@ -6,6 +6,8 @@ from collections import defaultdict, Counter
 import boto3
 from google import genai
 from google.genai import types
+from strategy.medium import check_medium_strategy
+from strategy.short import check_short_strategy
 
 # Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')
@@ -73,6 +75,23 @@ def calculate_rsi(prices, period=14):
     rsi = 100 - (100 / (1 + rs))
     
     return round(rsi, 2)
+
+
+def calculate_ma(prices, period):
+    """
+    Calculate Moving Average for given prices
+    prices: list of Decimal values (newest to oldest)
+    period: MA period (e.g., 5, 20, 60, 120, 240)
+    Returns: MA value or None if insufficient data
+    """
+    if len(prices) < period:
+        return None
+    
+    # Convert to float and calculate average of most recent 'period' prices
+    prices_float = [float(p) for p in prices[:period]]
+    ma_value = sum(prices_float) / period
+    
+    return round(ma_value, 2)
 
 
 def analyze_rsi_signals(rsi_data):
@@ -158,8 +177,8 @@ def analyze_rsi_signals(rsi_data):
 
 def get_index_rsi_for_date(date_str, periods=[5, 9, 14, 22]):
     """
-    Calculate RSI for all indexes on a specific date
-    Returns dict: {index_name: {RSI_X: value, signals: [...]}}
+    Calculate RSI and MA for all indexes on a specific date
+    Returns dict: {index_name: {RSI_X: value, MA_X: value, signals: [...]}}
     """
     if not index_data_table:
         print("Index data table not configured")
@@ -188,56 +207,96 @@ def get_index_rsi_for_date(date_str, periods=[5, 9, 14, 22]):
             print(f"No index data found around date {request_date} to {date_str}")
             return
         
-        # Calculate RSI for each index
-        max_period = max(periods)
+        # Calculate RSI and MA for each index
+        max_rsi_period = max(periods)
+        max_ma_period = 240  # Maximum MA period
+        max_period = max(max_rsi_period, max_ma_period)
+        
         for index_name in index_names:
-            # Get historical data for this index (need max_period + 1 days)
+            if index_name == "電子類":
+                continue
+
+            # Get historical data for this index (need max_period days)
             # Skip weekends and holidays by querying until we get enough valid prices
-            historical_prices = []
-            days_back = 0
-            max_attempts = max_period * 2  # Try up to 2x the period to account for holidays
+
+            query_response = index_data_table.query(
+                KeyConditionExpression='#n = :n AND #d <= :d',
+                ExpressionAttributeNames={'#n': 'name', '#d': 'date'},
+                ExpressionAttributeValues={':n': index_name, ':d': target_date.strftime('%Y-%m-%d')},
+                ScanIndexForward=False,
+                Limit=max_period + 1
+            )
             
-            # Query backwards from target date until we have enough prices
-            while len(historical_prices) < max_period + 1 and days_back < max_attempts:
-                query_date = (target_date - timedelta(days=days_back)).strftime('%Y-%m-%d')
-                
-                try:
-                    item_response = index_data_table.get_item(
-                        Key={
-                            'name': index_name,
-                            'date': query_date
-                        }
-                    )
-                    
-                    if 'Item' in item_response and 'value' in item_response['Item']:
-                        historical_prices.append(item_response['Item']['value'])
-                except Exception as e:
-                    print(f"Error getting data for {index_name} on {query_date}: {e}")
-                
-                days_back += 1
+            if any(['value' not in x for x in query_response.get('Items', [])]):
+                raise ValueError(f"Missing 'value' field in index data for {index_name} on {date_str}")
+            historical_prices = [i['value'] for i in query_response.get('Items', [])]
+            historical_turnover = [i.get('turnover', 0) for i in query_response.get('Items', [])]
             
-            # Calculate RSI for each period
-            if len(historical_prices) >= max_period + 1:
-                print(f"{index_name}: Collected {len(historical_prices)} prices from {days_back} days")
-                rsi_data = {}
+            # Calculate RSI and MA for each period
+            if len(historical_prices) >= max_rsi_period + 1:
+                print(f"{index_name}: Collected {len(historical_prices)} prices")
+                result_data = {}
+                
+                # Calculate RSI
                 for period in periods:
                     rsi_value = calculate_rsi(historical_prices, period)
                     if rsi_value is not None:
-                        rsi_data[f'RSI_{period}'] = Decimal(str(rsi_value))
+                        result_data[f'RSI_{period}'] = Decimal(str(rsi_value))
+                
+                # Calculate MA (Moving Average)
+                ma_periods = [5, 20, 60, 120, 240]
+                for ma_period in ma_periods:
+                    ma_name = f'MA_{ma_period}'
+                    ma_value = calculate_ma(historical_prices, ma_period)
+                    if ma_value is not None:
+                        result_data[ma_name] = Decimal(str(ma_value))
+                    else:
+                        print(f"{index_name}: Insufficient data for {ma_name} (have {len(historical_prices)} prices)")
+                        break
                 
                 # Analyze signals if we have all RSI values
-                if len(rsi_data) == len(periods):
-                    signals = analyze_rsi_signals(rsi_data)
+                rsi_count = sum(1 for key in result_data if key.startswith('RSI_'))
+                if rsi_count == len(periods):
+                    signals = analyze_rsi_signals({k: v for k, v in result_data.items() if k.startswith('RSI_')})
+                    
+                    # Prepare historical data for short strategy
+                    historical_data = []
+                    for item in query_response.get('Items', []):
+                        historical_data.append({
+                            'value': item.get('value'),
+                            'turnover': item.get('turnover', 0),
+                            'date': item.get('date')
+                        })
+                    
+                    # Add current price and check strategies
+                    current_price = float(historical_prices[0]) if historical_prices else 0
+                    current_turnover = float(historical_turnover[0]) if historical_turnover else 0
+                    
+                    strategy_data = {
+                        'value': current_price,
+                        'turnover': current_turnover,
+                        **result_data
+                    }
+                    
+                    # Check medium-term strategy
+                    medium_strategy_result = check_medium_strategy(strategy_data)
+                    
+                    # Check short-term strategy
+                    short_strategy_result = check_short_strategy(strategy_data, historical_data)
+                    
                     rsi_results[index_name] = {
-                        **rsi_data,
-                        'signals': signals
+                        **result_data,
+                        'signals': signals,
+                        'medium_strategy': medium_strategy_result,
+                        'short_strategy': short_strategy_result
                     }
                 else:
-                    rsi_results[index_name] = rsi_data
+                    rsi_results[index_name] = result_data
+
             else:
-                print(f"{index_name}: Insufficient data - only {len(historical_prices)} prices from {days_back} days (need {max_period + 1})")
+                print(f"{index_name}: Insufficient data - only {len(historical_prices)} prices (need {max_rsi_period + 1})")
         
-        print(f"Calculated RSI for {len(rsi_results)} indexes on {date_str}")
+        print(f"Calculated RSI and MA for {len(rsi_results)} indexes on {date_str}")
         return rsi_results
         
     except Exception as e:
