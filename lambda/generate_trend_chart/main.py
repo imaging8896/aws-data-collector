@@ -10,7 +10,6 @@ matplotlib.use('Agg')  # Must be before importing pyplot
 import matplotlib.font_manager
 import matplotlib.pyplot as plt
 
-from chart_capital_flow import generate_capital_flow_chart
 from chart_keyword_momentum import generate_keyword_momentum_chart
 from chart_sector_rotation import generate_sector_rotation_chart
 from chart_sentiment import generate_sentiment_chart
@@ -94,7 +93,6 @@ def handler(event, context):
         existing_keys = set()
 
         sector_rotation_data = {}
-        institutional_behavior_data = {}
         sentiment_data = {}
         keywords_data = {}
         stock_opportunities_data = {}
@@ -105,7 +103,6 @@ def handler(event, context):
                 existing_keys = list(item.get('chart_s3_keys', []))
 
             sector_rotation_data[statistics_date] = item.get('sector_rotation', {})
-            institutional_behavior_data[statistics_date] = item.get('institutional_behavior', {})
             sentiment_data[statistics_date] = item.get('sentiment', {})
             keywords_data[statistics_date] = item.get('keywords', [])
             stock_opportunities_data[statistics_date] = item.get('stocks', {})
@@ -150,28 +147,7 @@ def handler(event, context):
             }
         )
 
-        # 2. Generate capital flow chart
-        capital_flow_chart_bytes = generate_capital_flow_chart(institutional_behavior_data, categories)
-
-        s3_key = f"charts/capital-flow/{latest_date.isoformat()}-{timestamp}.png"
-        upload_chart_to_s3(capital_flow_chart_bytes, s3_bucket_name, s3_key, {
-            'date': latest_date.isoformat(),
-            'chart_type': 'capital_flow',
-            'generated_at': datetime.now(tz_utc8).isoformat()
-        })
-        existing_keys.append(s3_key)
-
-        stats_table.update_item(
-            Key={'date': latest_date.isoformat()},
-            UpdateExpression='SET capital_flow_chart_generated = :capital_flow_gen, capital_flow_chart_updated_at = :ts, chart_s3_keys = :keys',
-            ExpressionAttributeValues={
-            ':capital_flow_gen': True,
-            ':ts': datetime.now(tz_utc8).isoformat(),
-            ':keys': existing_keys
-            }
-        )
-
-        # 3. Generate sentiment chart
+        # 2. Generate sentiment chart
         sentiment_chart_bytes = generate_sentiment_chart(sentiment_data)
 
         s3_key = f"charts/sentiment/{latest_date.isoformat()}-{timestamp}.png"
@@ -192,7 +168,7 @@ def handler(event, context):
             }
         )
         
-        # 4. Generate keyword momentum chart
+        # 3. Generate keyword momentum chart
         keyword_momentum_chart_bytes = generate_keyword_momentum_chart(keywords_data)
 
         s3_key = f"charts/keyword-momentum/{latest_date.isoformat()}-{timestamp}.png"
@@ -212,8 +188,8 @@ def handler(event, context):
             ':keys': existing_keys
             }
         )
-
-        # 5. Generate stock opportunities chart
+        
+        # 4. Generate keyword momentum chartart
         stock_opportunities_chart_bytes = generate_stock_opportunities_chart(stock_opportunities_data)
 
         s3_key = f"charts/stock-opportunities/{latest_date.isoformat()}-{timestamp}.png"
