@@ -281,13 +281,6 @@ JSON 格式要求，請嚴格遵守，回應以下object in Json：
             "role": "leader or laggard"  // 該實體在產業中的角色 (leader或laggard)
         }}
     ],
-    "institutional_investor_behavior": {{
-        "action": "買超 or 賣超",  // 三大法人在新聞中的操作行為
-        "reason": "操作原因或背景說明",
-        "target_sectors": [
-            "請務必從以下清單中選擇最合適的一個分類：{categories_str}"
-        ]
-    }},
     "investment_themes": ["COWOS", "生成式AI"]  // 根據新聞內容提取的投資主題清單(sub-sectors)
 }}
 
