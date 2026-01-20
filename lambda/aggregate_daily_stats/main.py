@@ -490,7 +490,6 @@ def aggregate_by_date(items):
         'date': '',
         'total_news': 0,
         'sector_rotation': defaultdict(lambda: {'inflow': 0, 'outflow': 0, 'count': 0}),
-        'institutional_behavior': defaultdict(lambda: {'buy': 0, 'sell': 0}),
         'sentiment': {'positive': 0, 'negative': 0, 'neutral': 0, 'scores': []},
         'keywords': [],
         'stocks': defaultdict(lambda: {'name': '', 'mentions': 0, 'sentiment': 0, 'events': []})
@@ -524,17 +523,7 @@ def aggregate_by_date(items):
             
             daily_stats[date]['sector_rotation'][sector]['count'] += 1
         
-        # 2. Institutional Investor Behavior
-        inst_behavior = analysis.get('institutional_investor_behavior', {})
-        if inst_behavior and inst_behavior.get('action'):
-            action = inst_behavior['action'].lower()
-            for sector in inst_behavior.get('target_sectors', []):
-                if '買' in action or 'buy' in action:
-                    daily_stats[date]['institutional_behavior'][sector]['buy'] += 1
-                elif '賣' in action or 'sell' in action:
-                    daily_stats[date]['institutional_behavior'][sector]['sell'] += 1
-        
-        # 3. Market Sentiment
+        # 2. Market Sentiment
         market_sentiment = analysis.get('market_sentiment', {})
         if market_sentiment:
             score = float(market_sentiment['score'])
@@ -548,10 +537,10 @@ def aggregate_by_date(items):
             else:
                 daily_stats[date]['sentiment']['neutral'] += 1
         
-        # 4. Investment Themes (Keywords)
+        # 3. Investment Themes (Keywords)
         daily_stats[date]['keywords'].extend(analysis.get('investment_themes', []))
         
-        # 5. Stock Opportunities
+        # 4. Stock Opportunities
         for entity in analysis.get('entities_mentioned', []):
             stock_id = entity['id']
             stock_name = entity['name']
@@ -586,14 +575,6 @@ def save_daily_stats(date, stats):
                 'count': Decimal(str(data['count']))
             }
             for sector, data in stats['sector_rotation'].items()
-        }
-        
-        institutional_behavior = {
-            sector: {
-                'buy': Decimal(str(data['buy'])),
-                'sell': Decimal(str(data['sell']))
-            }
-            for sector, data in stats['institutional_behavior'].items()
         }
         
         # Calculate average sentiment score
@@ -634,13 +615,11 @@ def save_daily_stats(date, stats):
             # Update existing record with RSI
             update_expr = 'SET updated_at = :updated_at, total_news = :total_news, ' \
                          'sector_rotation = :sector_rotation, ' \
-                         'institutional_behavior = :institutional_behavior, ' \
                          'sentiment = :sentiment, keywords = :keywords, stocks = :stocks'
             attr_values = {
                 ':updated_at': int(datetime.now().timestamp()),
                 ':total_news': Decimal(str(stats['total_news'])),
                 ':sector_rotation': sector_rotation,
-                ':institutional_behavior': institutional_behavior,
                 ':sentiment': sentiment,
                 ':keywords': keywords,
                 ':stocks': stocks
@@ -662,7 +641,6 @@ def save_daily_stats(date, stats):
                 'updated_at': int(datetime.now().timestamp()),
                 'total_news': Decimal(str(stats['total_news'])),
                 'sector_rotation': sector_rotation,
-                'institutional_behavior': institutional_behavior,
                 'sentiment': sentiment,
                 'keywords': keywords,
                 'stocks': stocks
