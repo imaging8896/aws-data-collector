@@ -489,7 +489,6 @@ def aggregate_by_date(items):
     daily_stats = defaultdict(lambda: {
         'date': '',
         'total_news': 0,
-        'sector_rotation': defaultdict(lambda: {'inflow': 0, 'outflow': 0, 'count': 0}),
         'sentiment': {'positive': 0, 'negative': 0, 'neutral': 0, 'scores': []},
         'keywords': [],
         'stocks': defaultdict(lambda: {'name': '', 'mentions': 0, 'sentiment': 0, 'events': []})
@@ -500,30 +499,13 @@ def aggregate_by_date(items):
         date = datetime.fromtimestamp(publish_time).strftime('%Y-%m-%d')
         analysis = item.get('analysis', {})
         
-        if not analysis or 'sector_rotation' not in analysis:
+        if not analysis:
             continue
         
         daily_stats[date]['date'] = date
         daily_stats[date]['total_news'] += 1
         
-        # 1. Sector Rotation
-        for rotation in analysis.get('sector_rotation', []):
-            sector = rotation['sector']
-            trend = rotation['trend'].lower()
-            
-            if '流入' in trend or 'inflow' in trend:
-                daily_stats[date]['sector_rotation'][sector]['inflow'] += 1
-            elif '流出' in trend or 'outflow' in trend:
-                daily_stats[date]['sector_rotation'][sector]['outflow'] += 1
-            elif '持平' in trend or 'neutral' in trend:
-                daily_stats[date]['sector_rotation'][sector]['inflow'] = 0
-                daily_stats[date]['sector_rotation'][sector]['outflow'] = 0
-            else:
-                print(f"Unknown trend value: {trend} for {item.get('url', '')}")
-            
-            daily_stats[date]['sector_rotation'][sector]['count'] += 1
-        
-        # 2. Market Sentiment
+        # 1. Market Sentiment
         market_sentiment = analysis.get('market_sentiment', {})
         if market_sentiment:
             score = float(market_sentiment['score'])
@@ -567,16 +549,6 @@ def save_daily_stats(date, stats):
     Save daily statistics to DynamoDB
     """
     try:
-        # Convert nested defaultdict to regular dict for DynamoDB
-        sector_rotation = {
-            sector: {
-                'inflow': Decimal(str(data['inflow'])),
-                'outflow': Decimal(str(data['outflow'])),
-                'count': Decimal(str(data['count']))
-            }
-            for sector, data in stats['sector_rotation'].items()
-        }
-        
         # Calculate average sentiment score
         sentiment_scores = stats['sentiment']['scores']
         avg_sentiment = sum(sentiment_scores) / len(sentiment_scores) if sentiment_scores else 0
@@ -614,12 +586,10 @@ def save_daily_stats(date, stats):
         if 'Item' in existing:
             # Update existing record with RSI
             update_expr = 'SET updated_at = :updated_at, total_news = :total_news, ' \
-                         'sector_rotation = :sector_rotation, ' \
                          'sentiment = :sentiment, keywords = :keywords, stocks = :stocks'
             attr_values = {
                 ':updated_at': int(datetime.now().timestamp()),
                 ':total_news': Decimal(str(stats['total_news'])),
-                ':sector_rotation': sector_rotation,
                 ':sentiment': sentiment,
                 ':keywords': keywords,
                 ':stocks': stocks
@@ -640,7 +610,6 @@ def save_daily_stats(date, stats):
                 'date': date,
                 'updated_at': int(datetime.now().timestamp()),
                 'total_news': Decimal(str(stats['total_news'])),
-                'sector_rotation': sector_rotation,
                 'sentiment': sentiment,
                 'keywords': keywords,
                 'stocks': stocks

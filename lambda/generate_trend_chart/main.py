@@ -11,7 +11,6 @@ import matplotlib.font_manager
 import matplotlib.pyplot as plt
 
 from chart_keyword_momentum import generate_keyword_momentum_chart
-from chart_sector_rotation import generate_sector_rotation_chart
 from chart_sentiment import generate_sentiment_chart
 from chart_stock_opportunities import generate_stock_opportunities_chart
 
@@ -92,7 +91,6 @@ def handler(event, context):
         latest_date = max(date.fromisoformat(item['date']) for item in items)
         existing_keys = set()
 
-        sector_rotation_data = {}
         sentiment_data = {}
         keywords_data = {}
         stock_opportunities_data = {}
@@ -102,7 +100,6 @@ def handler(event, context):
             if statistics_date == latest_date:
                 existing_keys = list(item.get('chart_s3_keys', []))
 
-            sector_rotation_data[statistics_date] = item.get('sector_rotation', {})
             sentiment_data[statistics_date] = item.get('sentiment', {})
             keywords_data[statistics_date] = item.get('keywords', [])
             stock_opportunities_data[statistics_date] = item.get('stocks', {})
@@ -126,28 +123,7 @@ def handler(event, context):
             ExpressionAttributeValues={':bucket': s3_bucket_name, ':days': days, ':keys': list(existing_keys)}
         )
 
-        # 1. Generate sector rotation chart
-        sector_rotation_chart_bytes = generate_sector_rotation_chart(sector_rotation_data, categories)
-        
-        s3_key = f"charts/sector-rotation/{latest_date.isoformat()}-{timestamp}.png"
-        upload_chart_to_s3(sector_rotation_chart_bytes, s3_bucket_name, s3_key, {
-            'date': latest_date.isoformat(),
-            'chart_type': 'sector_rotation',
-            'generated_at': datetime.now(tz_utc8).isoformat()
-        })
-        existing_keys.append(s3_key)
-
-        stats_table.update_item(
-            Key={'date': latest_date.isoformat()},
-            UpdateExpression='SET sector_rotation_chart_generated = :sector_rotation_gen, sector_rotation_chart_updated_at = :ts, chart_s3_keys = :keys',
-            ExpressionAttributeValues={
-            ':sector_rotation_gen': True,
-            ':ts': datetime.now(tz_utc8).isoformat(),
-            ':keys': existing_keys
-            }
-        )
-
-        # 2. Generate sentiment chart
+        # 1. Generate sentiment chart
         sentiment_chart_bytes = generate_sentiment_chart(sentiment_data)
 
         s3_key = f"charts/sentiment/{latest_date.isoformat()}-{timestamp}.png"
@@ -168,7 +144,7 @@ def handler(event, context):
             }
         )
         
-        # 3. Generate keyword momentum chart
+        # 2. Generate keyword momentum chart
         keyword_momentum_chart_bytes = generate_keyword_momentum_chart(keywords_data)
 
         s3_key = f"charts/keyword-momentum/{latest_date.isoformat()}-{timestamp}.png"
@@ -189,7 +165,7 @@ def handler(event, context):
             }
         )
         
-        # 4. Generate keyword momentum chartart
+        # 3. Generate stock opportunities chart
         stock_opportunities_chart_bytes = generate_stock_opportunities_chart(stock_opportunities_data)
 
         s3_key = f"charts/stock-opportunities/{latest_date.isoformat()}-{timestamp}.png"
@@ -210,8 +186,6 @@ def handler(event, context):
             }
         )
 
-        # print(f"Chart generated and saved for {trend_id}")
-        
         # Lambda Destination will automatically trigger static website generator
         return {
             'statusCode': 200,
