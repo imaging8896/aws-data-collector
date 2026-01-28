@@ -40,6 +40,13 @@ variable "gemini_api_key" {
   sensitive   = true
 }
 
+variable "discord_webhook_url" {
+  description = "Discord webhook URL for trading signal notifications"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "categories" {
   description = "Categories for industry classification"
   type        = string
