@@ -252,10 +252,8 @@ def generate_analysis_prompt(title, content):
     categories_str = ', '.join(categories)
     
     return f"""
-你是一位專業的經濟新聞分析師,專門分析新聞的內容對各產業的影響。
-請以此新聞內容為唯一依據，進行以下產業分析:
-1.直接影響產業: 新聞內容中提及的所有產業領域
-2.間接影響產業: 根據新聞內容推論可能受到影響的相關產業領域
+你是一位專業的經濟新聞分析師,專門分析新聞的內容對市場和產業的影響。
+請以此新聞內容為唯一依據，進行以下分析:
 
 JSON 格式要求，請嚴格遵守，回應以下object in Json：
 {{
@@ -264,14 +262,6 @@ JSON 格式要求，請嚴格遵守，回應以下object in Json：
         "score": 0.2,  // 情緒分數 (-1到1，-1為非常負面，1為非常正面)
         "volatility_trigger": false  // 是否可能引發市場劇烈波動 (true或false) 
     }},
-    "sector_rotation": [
-        {{
-            "sector": "請務必從以下清單中選擇最合適的一個分類：{categories_str}",
-            "sub_sector": "具體產業領域名稱(例如: CoWoS, 散熱模組, 生成式AI)",
-            "trend": "資金流動的趨勢 (流入、流出、持平)",
-            "keyword": "資金流動理由"
-        }}
-    ],
     "entities_mentioned": [
         {{
             "name": "公司或組織名稱",
