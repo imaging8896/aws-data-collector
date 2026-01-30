@@ -2,8 +2,6 @@ import json
 import os
 from datetime import datetime
 import boto3
-from google import genai
-from google.genai import types
 
 # Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')
@@ -12,86 +10,36 @@ lambda_client = boto3.client('lambda')
 
 # Environment variables
 stats_table_name = os.environ['DYNAMODB_STATS_TABLE_NAME']
-gemini_secret_name = os.environ.get('GEMINI_API_KEY_SECRET_NAME')
+index_stocks_table_name = os.environ['DYNAMODB_INDEX_STOCKS_TABLE_NAME']
 discord_notify_function_name = os.environ.get('DISCORD_NOTIFY_FUNCTION_NAME')
 
 stats_table = dynamodb.Table(stats_table_name) # type: ignore
-
-# Initialize Gemini client (lazy loading)
-_gemini_client = None
-
-def get_gemini_client():
-    global _gemini_client
-    if _gemini_client is None and gemini_secret_name:
-        try:
-            secret_response = secrets_client.get_secret_value(SecretId=gemini_secret_name)
-            api_key = secret_response['SecretString']
-            _gemini_client = genai.Client(api_key=api_key)
-        except Exception as e:
-            print(f"Failed to initialize Gemini client: {str(e)}")
-    return _gemini_client
+index_stocks_table = dynamodb.Table(index_stocks_table_name) # type: ignore
 
 
-def find_representative_stocks(client, index_name):
+def get_representative_stocks(index_name):
     """
-    Use AI to find representative stocks for a given index
+    Get representative stocks for a given index from DynamoDB
     
     Args:
-        client: Gemini AI client
         index_name: Name of the index (e.g., "金融類", "半導體類")
     
     Returns:
         List of dicts with stock information
     """
-    if not client:
-        print(f"AI client not available for finding stocks")
-        return []
-    
     try:
-        prompt = f"""請找出「{index_name}」這個台股指數中最具代表性的前 5 家上市公司。
-
-要求：
-1. 只回傳台灣上市公司（股票代號為 4 位數字）
-2. 按市值和產業代表性排序
-3. 提供股票代號、公司名稱、以及為何具代表性的簡短理由
-
-請以 JSON 格式回傳，格式如下：
-{{
-  "stocks": [
-    {{"symbol": "2330", "name": "台積電", "reason": "全球半導體龍頭"}},
-    {{"symbol": "2317", "name": "鴻海", "reason": "電子代工龍頭"}}
-  ]
-}}
-
-注意：
-- 確保股票代號正確且為台灣上市公司
-- 最多回傳 5 家公司
-- 理由簡潔（10 字以內）
-"""
-
-        response = client.models.generate_content(
-            model='gemini-2.0-flash-lite',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.1,
-                response_mime_type='application/json'
-            )
-        )
+        response = index_stocks_table.get_item(Key={'index_name': index_name})
         
-        response_text = response.text.strip()
+        if 'Item' not in response:
+            print(f"No stocks found for {index_name}")
+            return []
         
-        if response_text.startswith('```'):
-            response_text = response_text.split('\n', 1)[1]
-            response_text = response_text.rsplit('```', 1)[0]
-        
-        result = json.loads(response_text)
-        stocks = result.get('stocks', [])
-        
-        print(f"Found {len(stocks)} representative stocks for {index_name}: {stocks}")
+        stocks = response['Item'].get('stocks', [])
+        print(f"Retrieved {len(stocks)} representative stocks for {index_name}")
         return stocks
         
     except Exception as e:
-        print(f"Error finding representative stocks for {index_name}: {str(e)}")
+        print(f"Error getting representative stocks for {index_name}: {str(e)}")
         import traceback
         traceback.print_exc()
         return []
@@ -165,7 +113,6 @@ def check_signals_and_notify(date_str, stats_data):
             print(f"Already sent notifications for {date_str} at {datetime.fromtimestamp(last_notification_time)}")
             return
         
-        client = get_gemini_client()
         notifications_sent = []
         
         for index_name, index_data in rsi_data.items():
@@ -197,8 +144,8 @@ def check_signals_and_notify(date_str, stats_data):
             if has_short_sell:
                 print(f"  - Short-term SELL signal")
             
-            # Find representative stocks using AI
-            representative_stocks = find_representative_stocks(client, index_name)
+            # Get representative stocks from DynamoDB
+            representative_stocks = get_representative_stocks(index_name)
             
             # Send notifications for each signal type
             if has_medium_buy:

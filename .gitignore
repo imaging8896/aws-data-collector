@@ -69,8 +69,9 @@ lambda_batch_analyzer_function.zip
 lambda_batch_analyzer_layer.zip
 layer_batch_analyzer/
 lambda_check_trading_signals_function.zip
-lambda_check_signals_layer.zip
-layer_check_signals/
+lambda_update_index_stocks_function.zip
+lambda_update_index_stocks_layer.zip
+layer_update_index_stocks/
 lambda_notify_discord_function.zip
 lambda/**/*.ttf
 

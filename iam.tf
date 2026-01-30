@@ -52,7 +52,9 @@ resource "aws_iam_role_policy" "lambda_dynamodb_policy" {
           aws_dynamodb_table.investor_data_table.arn,
           "${aws_dynamodb_table.investor_data_table.arn}/index/*",
           aws_dynamodb_table.index_data_table.arn,
-          "${aws_dynamodb_table.index_data_table.arn}/index/*"
+          "${aws_dynamodb_table.index_data_table.arn}/index/*",
+          aws_dynamodb_table.index_stocks_table.arn,
+          "${aws_dynamodb_table.index_stocks_table.arn}/index/*"
         ]
       }
     ]

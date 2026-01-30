@@ -38,6 +38,34 @@ resource "aws_dynamodb_table" "news_urls_table" {
   }
 }
 
+# DynamoDB Table for Index Representative Stocks
+resource "aws_dynamodb_table" "index_stocks_table" {
+  name         = "${var.environment}-${var.project_name}-index-stocks"
+  billing_mode = var.dynamodb_billing_mode
+  hash_key     = "index_name"
+
+  attribute {
+    name = "index_name"
+    type = "S"
+  }
+
+  # Point-in-time recovery for data protection
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  # Server-side encryption
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
+
 # DynamoDB Table for Gemini Batch Requests
 resource "aws_dynamodb_table" "batch_requests_table" {
   name         = "${var.environment}-${var.project_name}-batch-requests"

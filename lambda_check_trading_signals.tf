@@ -8,35 +8,6 @@ data "archive_file" "lambda_check_trading_signals_zip" {
   excludes    = ["requirements.txt", "__pycache__"]
 }
 
-# Create Lambda Layer with google-genai dependency
-resource "terraform_data" "install_check_signals_dependencies" {
-  triggers_replace = {
-    version = "1"
-  }
-
-  provisioner "local-exec" {
-    command = <<EOT
-      rm -rf ${path.module}/layer_check_signals || true
-      mkdir -p ${path.module}/layer_check_signals/python
-      docker run --rm --platform linux/arm64 --entrypoint "" \
-        -v "$(pwd)/${path.module}/layer_check_signals/python:/var/task" \
-        public.ecr.aws/lambda/python:${replace(var.lambda_runtime, "python", "")} \
-        pip install google-genai -t /var/task --upgrade
-      cd ${path.module}/layer_check_signals && zip -r ../lambda_check_signals_layer.zip python
-    EOT
-  }
-}
-
-resource "aws_lambda_layer_version" "check_signals_dependencies_layer" {
-  filename                 = "${path.module}/lambda_check_signals_layer.zip"
-  layer_name               = "${var.environment}-${var.project_name}-check-signals-dependencies"
-  compatible_runtimes      = [var.lambda_runtime]
-  compatible_architectures = ["arm64"]
-  source_code_hash         = terraform_data.install_check_signals_dependencies.id
-
-  depends_on = [terraform_data.install_check_signals_dependencies]
-}
-
 # Lambda Function
 resource "aws_lambda_function" "check_trading_signals" {
   filename         = data.archive_file.lambda_check_trading_signals_zip.output_path
@@ -48,14 +19,13 @@ resource "aws_lambda_function" "check_trading_signals" {
   memory_size     = 256
   timeout         = 300
   architectures    = ["arm64"]
-  layers           = [aws_lambda_layer_version.check_signals_dependencies_layer.arn]
 
   environment {
     variables = {
-      DYNAMODB_STATS_TABLE_NAME    = aws_dynamodb_table.daily_stats_table.name
-      GEMINI_API_KEY_SECRET_NAME   = aws_secretsmanager_secret.gemini_api_key.name
-      DISCORD_NOTIFY_FUNCTION_NAME = aws_lambda_function.notify_discord.function_name
-      ENVIRONMENT                  = var.environment
+      DYNAMODB_STATS_TABLE_NAME        = aws_dynamodb_table.daily_stats_table.name
+      DYNAMODB_INDEX_STOCKS_TABLE_NAME = aws_dynamodb_table.index_stocks_table.name
+      DISCORD_NOTIFY_FUNCTION_NAME     = aws_lambda_function.notify_discord.function_name
+      ENVIRONMENT                      = var.environment
     }
   }
 
