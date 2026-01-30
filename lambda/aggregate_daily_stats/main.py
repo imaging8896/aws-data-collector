@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from datetime import datetime, timedelta, date
 from decimal import Decimal
 from collections import defaultdict, Counter
@@ -352,7 +353,7 @@ def refine_keywords_with_ai(keywords_list):
 }}"""
         
         response = client.models.generate_content(
-            model='gemini-2.0-flash-lite',
+            model='gemini-2.5-flash-lite',
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.1,
@@ -363,6 +364,11 @@ def refine_keywords_with_ai(keywords_list):
                 # )
             )
         )
+
+        # Print token usage
+        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+            usage = response.usage_metadata
+            print(f"Token usage - Input: {usage.prompt_token_count}, Output: {usage.candidates_token_count}, Total: {usage.total_token_count}")
         
         # Extract JSON from response
         response_text = response.text.strip()
@@ -395,6 +401,7 @@ def refine_keywords_with_ai(keywords_list):
         # 排序並只回傳前 20 名
         final_result.sort(key=lambda x: x['count'], reverse=True)
         
+        time.sleep(1)  # 避免過快呼叫 AI 服務
         print(f"AI refined top {len(top_keywords)} keywords into {len(final_result)} categories")
         return final_result[:20]
         
