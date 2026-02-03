@@ -115,9 +115,15 @@ def check_signals_and_notify(date_str, stats_data):
         
         notifications_sent = []
         
+        # Indexes without representative stocks (broad market indexes)
+        INDEXES_WITHOUT_STOCKS = {'發行量加權股價', '臺灣50'}
+        
         for index_name, index_data in rsi_data.items():
-            # Only process indexes ending with "類" but skip "其他類"
-            if not index_name.endswith('類') or index_name == '其他類':
+            # Process indexes ending with "類" (but skip "其他類") OR specific broad market indexes
+            is_sector_index = index_name.endswith('類') and index_name != '其他類'
+            is_broad_market_index = index_name in INDEXES_WITHOUT_STOCKS
+            
+            if not (is_sector_index or is_broad_market_index):
                 continue
             
             medium_strategy = index_data.get('medium_strategy', {})
@@ -144,25 +150,27 @@ def check_signals_and_notify(date_str, stats_data):
             if has_short_sell:
                 print(f"  - Short-term SELL signal")
             
-            # Get representative stocks from DynamoDB
-            representative_stocks = get_representative_stocks(index_name)
+            # Get representative stocks from DynamoDB (empty for broad market indexes)
+            if is_broad_market_index:
+                representative_stocks = []
+            else:
+                representative_stocks = get_representative_stocks(index_name)
             
-            # Send notifications for each signal type
+            # Collect all signals for this index
+            signals = []
             if has_medium_buy:
-                send_notification(index_name, 'buy', 'medium', representative_stocks, current_timestamp)
-                notifications_sent.append(f"{index_name}-medium-buy")
-            
+                signals.append({'signal_type': 'buy', 'strategy_type': 'medium'})
             if has_short_buy:
-                send_notification(index_name, 'buy', 'short', representative_stocks, current_timestamp)
-                notifications_sent.append(f"{index_name}-short-buy")
-            
+                signals.append({'signal_type': 'buy', 'strategy_type': 'short'})
             if has_medium_sell:
-                send_notification(index_name, 'sell', 'medium', representative_stocks, current_timestamp)
-                notifications_sent.append(f"{index_name}-medium-sell")
-            
+                signals.append({'signal_type': 'sell', 'strategy_type': 'medium'})
             if has_short_sell:
-                send_notification(index_name, 'sell', 'short', representative_stocks, current_timestamp)
-                notifications_sent.append(f"{index_name}-short-sell")
+                signals.append({'signal_type': 'sell', 'strategy_type': 'short'})
+            
+            # Send one consolidated notification per index
+            send_notification(index_name, signals, representative_stocks, current_timestamp)
+            signal_names = [f"{s['strategy_type']}-{s['signal_type']}" for s in signals]
+            notifications_sent.append(f"{index_name}: {', '.join(signal_names)}")
         
         # Update notification timestamp in DynamoDB
         if notifications_sent:
@@ -176,7 +184,7 @@ def check_signals_and_notify(date_str, stats_data):
             )
             print(f"Sent {len(notifications_sent)} notifications for {date_str}")
         else:
-            print(f"No trading signals detected for indexes ending with '類' on {date_str}")
+            print(f"No trading signals detected on {date_str}")
         
     except Exception as e:
         print(f"Error checking signals and notifying: {str(e)}")
@@ -184,15 +192,20 @@ def check_signals_and_notify(date_str, stats_data):
         traceback.print_exc()
 
 
-def send_notification(index_name, signal_type, strategy_type, stock_symbols, timestamp):
+def send_notification(index_name, signals, stock_symbols, timestamp):
     """
-    Send a single notification to Discord
+    Send a consolidated notification to Discord for all signals of an index
+    
+    Args:
+        index_name: Name of the index
+        signals: List of signal dicts with 'signal_type' and 'strategy_type'
+        stock_symbols: List of representative stocks
+        timestamp: Current timestamp
     """
     try:
         payload = {
             'index_name': index_name,
-            'signal_type': signal_type,
-            'strategy_type': strategy_type,
+            'signals': signals,
             'stock_symbols': stock_symbols,
             'timestamp': timestamp
         }
@@ -203,7 +216,8 @@ def send_notification(index_name, signal_type, strategy_type, stock_symbols, tim
             Payload=json.dumps(payload)
         )
         
-        print(f"Sent {strategy_type} {signal_type} notification for {index_name}")
+        signal_desc = ', '.join([f"{s['strategy_type']} {s['signal_type']}" for s in signals])
+        print(f"Sent notification for {index_name}: {signal_desc}")
         print(f"Lambda invoke response: {response}")
         
     except Exception as e:

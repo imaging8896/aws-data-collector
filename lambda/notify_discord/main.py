@@ -28,15 +28,15 @@ def get_discord_webhook_url():
     return _webhook_url
 
 
-def send_discord_notification(index_name, signal_type, strategy_type, stock_symbols):
+def send_discord_notification(index_name, signals, stock_symbols, timestamp):
     """
-    Send notification to Discord via webhook
+    Send consolidated notification to Discord via webhook
     
     Args:
         index_name: Name of the index (e.g., "金融類")
-        signal_type: Type of signal (e.g., "buy_signal")
-        strategy_type: Strategy type ("medium" or "short")
+        signals: List of signal dicts with 'signal_type' and 'strategy_type'
         stock_symbols: List of representative stock symbols with details
+        timestamp: Unix timestamp of the notification
     """
     webhook_url = get_discord_webhook_url()
     if not webhook_url:
@@ -44,10 +44,33 @@ def send_discord_notification(index_name, signal_type, strategy_type, stock_symb
         return False
     
     try:
-        # Format strategy type in Chinese
-        strategy_name = "中線" if strategy_type == "medium" else "短線"
-        signal_emoji = "🟢" if signal_type == "buy" else "🔴"
-        signal_text = "買入" if signal_type == "buy" else "賣出"
+        # Build signal description
+        signal_parts = []
+        has_buy = False
+        has_sell = False
+        
+        for signal in signals:
+            strategy_name = "中線" if signal['strategy_type'] == "medium" else "短線"
+            signal_text = "買入" if signal['signal_type'] == "buy" else "賣出"
+            signal_parts.append(f"{strategy_name}{signal_text}")
+            
+            if signal['signal_type'] == "buy":
+                has_buy = True
+            else:
+                has_sell = True
+        
+        # Determine emoji and color based on signals
+        if has_buy and has_sell:
+            signal_emoji = "⚡"  # Mixed signals
+            color = 16776960  # Yellow
+        elif has_buy:
+            signal_emoji = "🟢"
+            color = 3066993  # Green
+        else:
+            signal_emoji = "🔴"
+            color = 15158332  # Red
+        
+        signal_summary = " / ".join(signal_parts)
         
         # Create stock list text
         stock_list = "\n".join([
@@ -57,30 +80,36 @@ def send_discord_notification(index_name, signal_type, strategy_type, stock_symb
         
         # Create Discord embed message
         embed = {
-            "title": f"{signal_emoji} {index_name} - {strategy_name}{signal_text}訊號",
-            "description": f"偵測到 **{index_name}** 出現{strategy_name}{signal_text}訊號",
-            "color": 3066993,  # Green color
-            "fields": [
-                {
-                    "name": "📊 代表性股票",
-                    "value": stock_list if stock_list else "未找到代表性股票",
-                    "inline": False
-                },
-                {
-                    "name": "📅 時間",
-                    "value": f"<t:{int(os.environ.get('notification_timestamp', 0))}:F>",
-                    "inline": True
-                },
-                {
-                    "name": "📈 策略類型",
-                    "value": strategy_name,
-                    "inline": True
-                }
-            ],
+            "title": f"{signal_emoji} {index_name} - {signal_summary}訊號",
+            "description": f"偵測到 **{index_name}** 出現以下訊號：\n{signal_summary}",
+            "color": color,
+            "fields": [],
             "footer": {
                 "text": "AWS Data Collector - 每日一次通知"
             }
         }
+        
+        # Add stock field if available
+        if stock_list:
+            embed["fields"].append({
+                "name": "📊 代表性股票",
+                "value": stock_list,
+                "inline": False
+            })
+        
+        # Add time field
+        embed["fields"].append({
+            "name": "📅 時間",
+            "value": f"<t:{int(timestamp)}:F>",
+            "inline": True
+        })
+        
+        # Add signals summary field
+        embed["fields"].append({
+            "name": "📈 訊號類型",
+            "value": signal_summary,
+            "inline": True
+        })
         
         payload = {
             "embeds": [embed]
@@ -113,11 +142,13 @@ def handler(event, context):
     """
     Lambda handler for Discord notifications
     
-    Expected event format:
+    Expected event format (new consolidated format):
     {
         "index_name": "金融類",
-        "signal_type": "buy",
-        "strategy_type": "medium",  # or "short"
+        "signals": [
+            {"signal_type": "buy", "strategy_type": "medium"},
+            {"signal_type": "buy", "strategy_type": "short"}
+        ],
         "stock_symbols": [
             {"symbol": "2330", "name": "台積電"},
             {"symbol": "2317", "name": "鴻海"}
@@ -127,13 +158,16 @@ def handler(event, context):
     """
     try:
         index_name = event.get('index_name', '')
-        signal_type = event.get('signal_type', 'buy')
-        strategy_type = event.get('strategy_type', 'medium')
+        signals = event.get('signals', [])
         stock_symbols = event.get('stock_symbols', [])
         timestamp = event.get('timestamp', 0)
         
-        # Set timestamp as environment variable for embed
-        os.environ['notification_timestamp'] = str(timestamp)
+        # Backward compatibility: convert old format to new format
+        if not signals and 'signal_type' in event:
+            signals = [{
+                'signal_type': event.get('signal_type', 'buy'),
+                'strategy_type': event.get('strategy_type', 'medium')
+            }]
         
         if not index_name:
             return {
@@ -141,11 +175,17 @@ def handler(event, context):
                 'body': json.dumps({'error': 'index_name is required'})
             }
         
+        if not signals:
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'signals is required'})
+            }
+        
         success = send_discord_notification(
             index_name,
-            signal_type,
-            strategy_type,
-            stock_symbols
+            signals,
+            stock_symbols,
+            timestamp
         )
         
         return {
