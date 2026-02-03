@@ -60,17 +60,17 @@ def get_trades(indexes: list[Index], from_dt: datetime, to_dt: datetime):
         raise Exception(f"API error: {data}")
     
     data = data['data']
-    if isinstance(data, list) and len(data) != len(indexes):
-        raise Exception(f"Returned data length {len(data)}\n{data}\ndoes not match requested indexes length {len(indexes)}")
-
     result = {}
     if isinstance(data, list):
-        for request_index, response_data in zip(indexes, data):
-            key = str(request_index)
-            if index_data := response_data.get(key):
-                result[request_index] = _get_data(index_data, data)
-            else:
-                raise Exception(f"Missing data for index {key} in response: {data}")
+        index_iter = iter(indexes)
+        for response_data in data:
+            for index in index_iter:
+                key = str(index)
+                if key in response_data:
+                    result[index] = _get_data(response_data[key], data)
+                    break
+                else:
+                    print(f"[ERROR] Missing data for index {key} in response: {data}")
     else:
         result[indexes[0]] = _get_data(data, data)
         

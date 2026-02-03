@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from datetime import datetime, timezone, timedelta, date
 from decimal import Decimal
 import boto3
@@ -12,6 +13,18 @@ index_data_table_name = os.environ['INDEX_DATA_TABLE_NAME']
 market_data_table = dynamodb.Table(market_data_table_name)  # type: ignore
 investor_data_table = dynamodb.Table(investor_data_table_name)  # type: ignore
 index_data_table = dynamodb.Table(index_data_table_name)  # type: ignore
+
+
+def retry_once(func):
+    """Decorator to retry a function once on failure"""
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            print(f"First attempt failed: {str(e)}, retrying in 2 seconds...")
+            time.sleep(2)
+            return func(*args, **kwargs)
+    return wrapper
 
 
 def handler(event, context):
@@ -79,6 +92,7 @@ def handler(event, context):
         }
 
 
+@retry_once
 def get_trades(index_names, from_days):
     from cnyes.trade import Index, get_trades
 
@@ -120,6 +134,7 @@ def get_trades(index_names, from_days):
         print(f"Saved {len(index_data['data'])} data points for {str(index)} {index_name}")
 
 
+@retry_once
 def get_investor(data_date: date):
     from twse.investor import get_investor
 
@@ -136,6 +151,7 @@ def get_investor(data_date: date):
         print(f"No investor data available for {data_date}")
 
 
+@retry_once
 def get_indexes(data_date: date):
     from twse.index import get_indexes
 
@@ -178,6 +194,7 @@ def get_indexes(data_date: date):
     return data
 
 
+@retry_once
 def get_stock_group_trade(data_date: date):
     from twse.stock_group_trade import get_stock_group_trade
 
