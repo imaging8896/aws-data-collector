@@ -17,11 +17,15 @@ secrets_client = boto3.client('secretsmanager')
 news_table_name = os.environ['DYNAMODB_TABLE_NAME']
 stats_table_name = os.environ['DYNAMODB_STATS_TABLE_NAME']
 index_data_table_name = os.environ['DYNAMODB_INDEX_TABLE_NAME']
+index_stocks_table_name = os.environ.get('DYNAMODB_INDEX_STOCKS_TABLE_NAME', '')
+market_data_table_name = os.environ.get('DYNAMODB_MARKET_DATA_TABLE_NAME', '')
 gemini_secret_name = os.environ.get('GEMINI_API_KEY_SECRET_NAME')
 
 news_table = dynamodb.Table(news_table_name) # type: ignore
 stats_table = dynamodb.Table(stats_table_name) # type: ignore
 index_data_table = dynamodb.Table(index_data_table_name) # type: ignore
+index_stocks_table = dynamodb.Table(index_stocks_table_name) if index_stocks_table_name else None # type: ignore
+market_data_table = dynamodb.Table(market_data_table_name) if market_data_table_name else None # type: ignore
 
 # Initialize Gemini client (lazy loading)
 _gemini_client = None
@@ -302,6 +306,218 @@ def get_index_rsi_for_date(date_str, periods=[5, 9, 14, 22]):
         
     except Exception as e:
         print(f"Error calculating RSI for date {date_str}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {}
+
+
+def get_all_index_stocks():
+    """
+    Get all stocks from index_stocks_table
+    Returns dict: {index_name: [{'symbol': ..., 'name': ...}, ...]}
+    """
+    if not index_stocks_table:
+        print("Index stocks table not configured")
+        return {}
+    
+    try:
+        response = index_stocks_table.scan()
+        items = response.get('Items', [])
+        
+        result = {}
+        for item in items:
+            index_name = item.get('index_name')
+            stocks = item.get('stocks', [])
+            if index_name and stocks:
+                result[index_name] = stocks
+        
+        print(f"Retrieved stocks for {len(result)} indexes")
+        return result
+        
+    except Exception as e:
+        print(f"Error getting index stocks: {str(e)}")
+        return {}
+
+
+def get_stock_historical_data(symbol, target_date, days=10):
+    """
+    Get historical price data for a stock from market_data_table
+    
+    Args:
+        symbol: Stock symbol (e.g., "2330")
+        target_date: Target date string (YYYY-MM-DD)
+        days: Number of days of historical data to retrieve
+    
+    Returns:
+        List of dicts with date, close, high, low, turnover (newest to oldest)
+    """
+    if not market_data_table:
+        return []
+    
+    try:
+        response = market_data_table.query(
+            KeyConditionExpression='symbol = :symbol AND #date <= :target_date',
+            ExpressionAttributeNames={'#date': 'date'},
+            ExpressionAttributeValues={
+                ':symbol': symbol,
+                ':target_date': target_date
+            },
+            ScanIndexForward=False,  # Newest first
+            Limit=days
+        )
+        
+        items = response.get('Items', [])
+        if not items:
+            return []
+        
+        # Convert Decimal to float
+        historical_data = []
+        for item in items:
+            historical_data.append({
+                'date': item.get('date'),
+                'close': float(item.get('close', 0)),
+                'high': float(item.get('high', 0)),
+                'low': float(item.get('low', 0)),
+                'turnover': float(item.get('turnover', 0))
+            })
+        
+        return historical_data
+        
+    except Exception as e:
+        print(f"Error getting historical data for {symbol}: {str(e)}")
+        return []
+
+
+def check_stock_short_signal(stock_symbol, target_date):
+    """
+    Check short-term trading signal for a stock using strategy/short.py
+    
+    Args:
+        stock_symbol: Stock symbol (e.g., "2330")
+        target_date: Target date string (YYYY-MM-DD)
+    
+    Returns:
+        dict with signal info
+    """
+    result = {
+        'has_signal': False,
+        'buy_signal': False,
+        'sell_signal': False,
+        'rsi_5': None,
+        'daily_gain_pct': None,
+        'has_latest_data': False
+    }
+    
+    # Get historical data for this stock
+    historical_data = get_stock_historical_data(stock_symbol, target_date, days=10)
+    
+    if not historical_data or len(historical_data) < 6:
+        return result
+    
+    # Check if we have the target date's data
+    if historical_data[0]['date'] != target_date:
+        return result
+    
+    result['has_latest_data'] = True
+    
+    # Extract prices for RSI calculation (close prices, newest to oldest)
+    prices = [d['close'] for d in historical_data]
+    
+    # Calculate RSI-5
+    rsi_5 = calculate_rsi(prices, period=5)
+    if rsi_5 is not None:
+        result['rsi_5'] = Decimal(str(rsi_5))
+    
+    if rsi_5 is None:
+        return result
+    
+    # Prepare data for check_short_strategy
+    # Convert stock data format to match index data format expected by check_short_strategy
+    current = historical_data[0]
+    
+    index_data = {
+        'value': current['close'],
+        'RSI_5': Decimal(str(rsi_5)),
+        'turnover': current['turnover']
+    }
+    
+    # Convert historical data format: use 'close' as 'value', 'low' for prev_low check
+    strategy_historical_data = []
+    for d in historical_data:
+        strategy_historical_data.append({
+            'value': d['close'],
+            'high': d['high'],
+            'low': d['low'],
+            'turnover': d['turnover'],
+            'date': d['date']
+        })
+    
+    # Use shared short strategy logic
+    strategy_result = check_short_strategy(index_data, strategy_historical_data)
+    
+    result['buy_signal'] = strategy_result.get('buy_signal', False)
+    result['sell_signal'] = strategy_result.get('sell_signal', False)
+    result['has_signal'] = result['buy_signal'] or result['sell_signal']
+    
+    # Get daily_gain_pct from conditions
+    conditions = strategy_result.get('conditions', {})
+    if 'daily_gain_pct' in conditions:
+        result['daily_gain_pct'] = conditions['daily_gain_pct']
+    
+    return result
+
+
+def get_stock_rsi_for_date(date_str):
+    """
+    Calculate RSI and short-term signals for all index stocks on a specific date
+    Returns dict: {index_name: {stock_symbol: {rsi_5, daily_gain_pct, buy_signal, sell_signal, ...}}}
+    """
+    if not index_stocks_table or not market_data_table:
+        print("Index stocks table or market data table not configured")
+        return {}
+    
+    try:
+        # Get all index stocks
+        all_index_stocks = get_all_index_stocks()
+        
+        if not all_index_stocks:
+            print("No index stocks found")
+            return {}
+        
+        rsi_stock_results = {}
+        
+        for index_name, stocks in all_index_stocks.items():
+            stock_results = {}
+            
+            for stock in stocks:
+                stock_symbol = stock.get('symbol', '')
+                stock_name = stock.get('name', '')
+                
+                if not stock_symbol:
+                    continue
+                
+                # Calculate signal for this stock
+                signal = check_stock_short_signal(stock_symbol, date_str)
+                
+                stock_results[stock_symbol] = {
+                    'name': stock_name,
+                    'has_latest_data': signal['has_latest_data'],
+                    'has_signal': signal['has_signal'],
+                    'buy_signal': signal['buy_signal'],
+                    'sell_signal': signal['sell_signal'],
+                    'rsi_5': signal['rsi_5'],
+                    'daily_gain_pct': signal['daily_gain_pct']
+                }
+            
+            if stock_results:
+                rsi_stock_results[index_name] = stock_results
+        
+        total_stocks = sum(len(stocks) for stocks in rsi_stock_results.values())
+        print(f"Calculated RSI for {total_stocks} stocks across {len(rsi_stock_results)} indexes on {date_str}")
+        return rsi_stock_results
+        
+    except Exception as e:
+        print(f"Error calculating stock RSI for date {date_str}: {str(e)}")
         import traceback
         traceback.print_exc()
         return {}
@@ -590,8 +806,11 @@ def save_daily_stats(date, stats):
         # Calculate RSI for all indexes
         rsi_data = get_index_rsi_for_date(date)
         
+        # Calculate RSI for all index stocks
+        rsi_stock_data = get_stock_rsi_for_date(date)
+        
         if 'Item' in existing:
-            # Update existing record with RSI
+            # Update existing record with RSI and RSI_stock
             update_expr = 'SET updated_at = :updated_at, total_news = :total_news, ' \
                          'sentiment = :sentiment, keywords = :keywords, stocks = :stocks'
             attr_values = {
@@ -606,13 +825,17 @@ def save_daily_stats(date, stats):
                 update_expr += ', RSI = :rsi'
                 attr_values[':rsi'] = rsi_data
             
+            if rsi_stock_data:
+                update_expr += ', RSI_stock = :rsi_stock'
+                attr_values[':rsi_stock'] = rsi_stock_data
+            
             stats_table.update_item(
                 Key={'date': date},
                 UpdateExpression=update_expr,
                 ExpressionAttributeValues=attr_values
             )
         else:
-            # Create new record with RSI
+            # Create new record with RSI and RSI_stock
             item = {
                 'date': date,
                 'updated_at': int(datetime.now().timestamp()),
@@ -625,10 +848,14 @@ def save_daily_stats(date, stats):
             if rsi_data:
                 item['RSI'] = rsi_data
             
+            if rsi_stock_data:
+                item['RSI_stock'] = rsi_stock_data
+            
             stats_table.put_item(Item=item)
         
-        print(f"Saved statistics for {date}: {stats['total_news']} news items with RSI for {len(rsi_data)} indexes")
-        
+        stock_count = sum(len(stocks) for stocks in rsi_stock_data.values()) if rsi_stock_data else 0
+        print(f"Saved statistics for {date}: {stats['total_news']} news items with RSI for {len(rsi_data)} indexes and {stock_count} stocks")
+  
     except Exception as e:
         print(f"Error saving stats for {date}: {str(e)}")
         import traceback

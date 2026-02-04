@@ -5,44 +5,13 @@ import boto3
 
 # Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')
-secrets_client = boto3.client('secretsmanager')
 lambda_client = boto3.client('lambda')
 
 # Environment variables
 stats_table_name = os.environ['DYNAMODB_STATS_TABLE_NAME']
-index_stocks_table_name = os.environ['DYNAMODB_INDEX_STOCKS_TABLE_NAME']
 discord_notify_function_name = os.environ.get('DISCORD_NOTIFY_FUNCTION_NAME')
 
 stats_table = dynamodb.Table(stats_table_name) # type: ignore
-index_stocks_table = dynamodb.Table(index_stocks_table_name) # type: ignore
-
-
-def get_representative_stocks(index_name):
-    """
-    Get representative stocks for a given index from DynamoDB
-    
-    Args:
-        index_name: Name of the index (e.g., "金融類", "半導體類")
-    
-    Returns:
-        List of dicts with stock information
-    """
-    try:
-        response = index_stocks_table.get_item(Key={'index_name': index_name})
-        
-        if 'Item' not in response:
-            print(f"No stocks found for {index_name}")
-            return []
-        
-        stocks = response['Item'].get('stocks', [])
-        print(f"Retrieved {len(stocks)} representative stocks for {index_name}")
-        return stocks
-        
-    except Exception as e:
-        print(f"Error getting representative stocks for {index_name}: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return []
 
 
 def get_latest_stats():
@@ -90,13 +59,14 @@ def check_signals_and_notify(date_str, stats_data):
     
     Args:
         date_str: Date string (YYYY-MM-DD)
-        stats_data: Stats data from DynamoDB including RSI
+        stats_data: Stats data from DynamoDB including RSI and RSI_stock
     """
     if not stats_data or 'RSI' not in stats_data:
         print("No RSI data available")
         return
     
     rsi_data = stats_data.get('RSI', {})
+    rsi_stock_data = stats_data.get('RSI_stock', {})
     
     if not discord_notify_function_name:
         print("Discord notify function not configured")
@@ -150,11 +120,48 @@ def check_signals_and_notify(date_str, stats_data):
             if has_short_sell:
                 print(f"  - Short-term SELL signal")
             
-            # Get representative stocks from DynamoDB (empty for broad market indexes)
+            # Get stock signals from RSI_stock data (empty for broad market indexes)
             if is_broad_market_index:
-                representative_stocks = []
+                stocks_with_signals = []
             else:
-                representative_stocks = get_representative_stocks(index_name)
+                # Get stock signals from pre-calculated RSI_stock
+                index_stock_signals = rsi_stock_data.get(index_name, {})
+                
+                stocks_with_signals = []
+                for stock_symbol, stock_signal in index_stock_signals.items():
+                    stock_name = stock_signal.get('name', '')
+                    has_latest_data = stock_signal.get('has_latest_data', False)
+                    has_signal = stock_signal.get('has_signal', False)
+                    buy_signal = stock_signal.get('buy_signal', False)
+                    sell_signal = stock_signal.get('sell_signal', False)
+                    rsi_5 = stock_signal.get('rsi_5')
+                    daily_gain_pct = stock_signal.get('daily_gain_pct')
+                    
+                    # Convert Decimal to float if needed
+                    if rsi_5 is not None:
+                        rsi_5 = float(rsi_5)
+                    if daily_gain_pct is not None:
+                        daily_gain_pct = float(daily_gain_pct)
+                    
+                    stock_info = {
+                        'symbol': stock_symbol,
+                        'name': stock_name,
+                        'has_latest_data': has_latest_data,
+                        'has_signal': has_signal,
+                        'buy_signal': buy_signal,
+                        'sell_signal': sell_signal,
+                        'rsi_5': rsi_5,
+                        'daily_gain_pct': daily_gain_pct
+                    }
+                    stocks_with_signals.append(stock_info)
+                    
+                    if has_signal:
+                        signal_type = "買入" if buy_signal else "賣出"
+                        print(f"  Stock {stock_symbol} ({stock_name}): {signal_type} signal, RSI5={rsi_5}, 漲跌={daily_gain_pct}%")
+                    elif has_latest_data:
+                        print(f"  Stock {stock_symbol} ({stock_name}): No signal, RSI5={rsi_5}")
+                    else:
+                        print(f"  Stock {stock_symbol} ({stock_name}): No latest data")
             
             # Collect all signals for this index
             signals = []
@@ -168,7 +175,7 @@ def check_signals_and_notify(date_str, stats_data):
                 signals.append({'signal_type': 'sell', 'strategy_type': 'short'})
             
             # Send one consolidated notification per index
-            send_notification(index_name, signals, representative_stocks, current_timestamp)
+            send_notification(index_name, signals, stocks_with_signals, current_timestamp)
             signal_names = [f"{s['strategy_type']}-{s['signal_type']}" for s in signals]
             notifications_sent.append(f"{index_name}: {', '.join(signal_names)}")
         

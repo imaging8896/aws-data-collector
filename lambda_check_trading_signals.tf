@@ -22,10 +22,9 @@ resource "aws_lambda_function" "check_trading_signals" {
 
   environment {
     variables = {
-      DYNAMODB_STATS_TABLE_NAME        = aws_dynamodb_table.daily_stats_table.name
-      DYNAMODB_INDEX_STOCKS_TABLE_NAME = aws_dynamodb_table.index_stocks_table.name
-      DISCORD_NOTIFY_FUNCTION_NAME     = aws_lambda_function.notify_discord.function_name
-      ENVIRONMENT                      = var.environment
+      DYNAMODB_STATS_TABLE_NAME    = aws_dynamodb_table.daily_stats_table.name
+      DISCORD_NOTIFY_FUNCTION_NAME = aws_lambda_function.notify_discord.function_name
+      ENVIRONMENT                  = var.environment
     }
   }
 

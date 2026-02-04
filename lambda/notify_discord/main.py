@@ -35,7 +35,17 @@ def send_discord_notification(index_name, signals, stock_symbols, timestamp):
     Args:
         index_name: Name of the index (e.g., "金融類")
         signals: List of signal dicts with 'signal_type' and 'strategy_type'
-        stock_symbols: List of representative stock symbols with details
+        stock_symbols: List of representative stock symbols with signal details
+            Each stock: {
+                'symbol': str,
+                'name': str,
+                'has_latest_data': bool,
+                'has_signal': bool,
+                'buy_signal': bool,
+                'sell_signal': bool,
+                'rsi_5': float or None,
+                'daily_gain_pct': float or None
+            }
         timestamp: Unix timestamp of the notification
     """
     webhook_url = get_discord_webhook_url()
@@ -72,11 +82,45 @@ def send_discord_notification(index_name, signals, stock_symbols, timestamp):
         
         signal_summary = " / ".join(signal_parts)
         
-        # Create stock list text
-        stock_list = "\n".join([
-            f"• **{stock['symbol']}** ({stock['name']})"
-            for stock in stock_symbols[:5]  # Top 5 stocks
-        ])
+        # Create stock list text with signal info
+        stock_lines = []
+        for stock in stock_symbols[:5]:  # Top 5 stocks
+            symbol = stock.get('symbol', '')
+            name = stock.get('name', '')
+            has_latest_data = stock.get('has_latest_data', False)
+            has_signal = stock.get('has_signal', False)
+            buy_signal = stock.get('buy_signal', False)
+            sell_signal = stock.get('sell_signal', False)
+            rsi_5 = stock.get('rsi_5')
+            daily_gain_pct = stock.get('daily_gain_pct')
+            
+            if not has_latest_data:
+                # No latest data - just show symbol and name
+                stock_lines.append(f"• **{symbol}** ({name})")
+            elif has_signal:
+                # Has signal - show with emoji and details
+                if buy_signal:
+                    stock_emoji = "🟢"
+                    signal_text = "買入"
+                else:
+                    stock_emoji = "🔴"
+                    signal_text = "賣出"
+                
+                gain_text = f"{daily_gain_pct:+.2f}%" if daily_gain_pct is not None else ""
+                rsi_text = f"RSI5:{rsi_5}" if rsi_5 is not None else ""
+                details = " | ".join(filter(None, [gain_text, rsi_text]))
+                stock_lines.append(f"• {stock_emoji} **{symbol}** ({name}) - {signal_text} {details}")
+            else:
+                # No signal but has data - show basic info
+                gain_text = f"{daily_gain_pct:+.2f}%" if daily_gain_pct is not None else ""
+                rsi_text = f"RSI5:{rsi_5}" if rsi_5 is not None else ""
+                details = " | ".join(filter(None, [gain_text, rsi_text]))
+                if details:
+                    stock_lines.append(f"• **{symbol}** ({name}) - {details}")
+                else:
+                    stock_lines.append(f"• **{symbol}** ({name})")
+        
+        stock_list = "\n".join(stock_lines)
         
         # Create Discord embed message
         embed = {
