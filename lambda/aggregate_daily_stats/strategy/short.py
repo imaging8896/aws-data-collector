@@ -66,13 +66,19 @@ def check_short_strategy(index_data, historical_data):
         # Get yesterday's price for daily gain calculation
         prev_price = float(historical_data[1].get('value', 0)) if len(historical_data) > 1 else 0
         
-        # Get previous day's low (assuming we have high/low in future, for now use value)
-        prev_low = float(historical_data[1].get('value', 0)) if len(historical_data) > 1 else 0
+        # Get previous day's low (use 'low' if available, otherwise use 'value')
+        prev_day = historical_data[1] if len(historical_data) > 1 else {}
+        prev_low = float(prev_day.get('low', prev_day.get('value', 0)))
         
         # Calculate conditions
         
-        # 1. Price breaks 3-day high
-        three_day_high = max([float(historical_data[i].get('value', 0)) for i in range(1, min(4, len(historical_data)))])
+        # 1. Price breaks 3-day high (use 'high' if available, otherwise use 'value')
+        three_day_highs = []
+        for i in range(1, min(4, len(historical_data))):
+            day_data = historical_data[i]
+            high_price = float(day_data.get('high', day_data.get('value', 0)))
+            three_day_highs.append(high_price)
+        three_day_high = max(three_day_highs) if three_day_highs else 0
         price_breaks_3day_high = current_price > three_day_high
         
         # 2. Daily gain > 1%
