@@ -3,7 +3,6 @@ import os
 import boto3
 from datetime import datetime
 from google import genai
-from google.genai import types
 
 # Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')
@@ -258,10 +257,6 @@ def generate_analysis_prompt(title, content):
 JSON 格式要求，請嚴格遵守，回應以下object in Json：
 {{
     "importance_score": 0.6,  // 整體重要性評分 (0到1，0為非常不重要，1為非常重要)
-    "market_sentiment": {{
-        "score": 0.2,  // 情緒分數 (-1到1，-1為非常負面，1為非常正面)
-        "volatility_trigger": false  // 是否可能引發市場劇烈波動 (true或false) 
-    }},
     "entities_mentioned": [
         {{
             "name": "公司或組織名稱",

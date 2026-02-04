@@ -712,7 +712,6 @@ def aggregate_by_date(items):
     daily_stats = defaultdict(lambda: {
         'date': '',
         'total_news': 0,
-        'sentiment': {'positive': 0, 'negative': 0, 'neutral': 0, 'scores': []},
         'keywords': [],
         'stocks': defaultdict(lambda: {'name': '', 'mentions': 0, 'sentiment': 0, 'events': []})
     })
@@ -728,21 +727,7 @@ def aggregate_by_date(items):
         daily_stats[date]['date'] = date
         daily_stats[date]['total_news'] += 1
         
-        # 1. Market Sentiment
-        market_sentiment = analysis.get('market_sentiment', {})
-        if market_sentiment:
-            score = float(market_sentiment['score'])
-            daily_stats[date]['sentiment']['scores'].append(score)
-            
-            # Determine mood based on score (-1 to 1)
-            if score > 0.2:
-                daily_stats[date]['sentiment']['positive'] += 1
-            elif score < -0.2:
-                daily_stats[date]['sentiment']['negative'] += 1
-            else:
-                daily_stats[date]['sentiment']['neutral'] += 1
-        
-        # 3. Investment Themes (Keywords)
+        # 1. Investment Themes (Keywords)
         daily_stats[date]['keywords'].extend(analysis.get('investment_themes', []))
         
         # 4. Stock Opportunities
@@ -772,17 +757,6 @@ def save_daily_stats(date, stats):
     Save daily statistics to DynamoDB
     """
     try:
-        # Calculate average sentiment score
-        sentiment_scores = stats['sentiment']['scores']
-        avg_sentiment = sum(sentiment_scores) / len(sentiment_scores) if sentiment_scores else 0
-        
-        sentiment = {
-            'positive': Decimal(str(stats['sentiment']['positive'])),
-            'negative': Decimal(str(stats['sentiment']['negative'])),
-            'neutral': Decimal(str(stats['sentiment']['neutral'])),
-            'average_score': Decimal(str(round(avg_sentiment, 4)))
-        }
-        
         # Refine keywords using AI
         raw_keywords = stats['keywords']
         refined_keywords = refine_keywords_with_ai(raw_keywords)
@@ -812,11 +786,10 @@ def save_daily_stats(date, stats):
         if 'Item' in existing:
             # Update existing record with RSI and RSI_stock
             update_expr = 'SET updated_at = :updated_at, total_news = :total_news, ' \
-                         'sentiment = :sentiment, keywords = :keywords, stocks = :stocks'
+                         'keywords = :keywords, stocks = :stocks'
             attr_values = {
                 ':updated_at': int(datetime.now().timestamp()),
                 ':total_news': Decimal(str(stats['total_news'])),
-                ':sentiment': sentiment,
                 ':keywords': keywords,
                 ':stocks': stocks
             }
@@ -840,7 +813,6 @@ def save_daily_stats(date, stats):
                 'date': date,
                 'updated_at': int(datetime.now().timestamp()),
                 'total_news': Decimal(str(stats['total_news'])),
-                'sentiment': sentiment,
                 'keywords': keywords,
                 'stocks': stocks
             }
