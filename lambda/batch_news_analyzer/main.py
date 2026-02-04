@@ -266,7 +266,6 @@ JSON 格式要求，請嚴格遵守，回應以下object in Json：
             "role": "leader or laggard"  // 該實體在產業中的角色 (leader或laggard)
         }}
     ],
-    "investment_themes": ["COWOS", "生成式AI"]  // 根據新聞內容提取的投資主題清單(sub-sectors)
 }}
 
 新聞標題: {title}

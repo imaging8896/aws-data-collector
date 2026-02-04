@@ -198,7 +198,6 @@ def generate_html(request_date, start_date, end_date, days, chart_urls, rsi_data
     """
     # Chart titles mapping
     chart_titles = [
-        "🔥 關鍵字動能",
         "🎯 個股投資機會"
     ]
     

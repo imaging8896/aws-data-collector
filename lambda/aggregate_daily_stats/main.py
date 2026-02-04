@@ -1,45 +1,26 @@
 import json
 import os
-import time
 from datetime import datetime, timedelta, date
 from decimal import Decimal
-from collections import defaultdict, Counter
+from collections import defaultdict
 import boto3
-from google import genai
-from google.genai import types
 from strategy.medium import check_medium_strategy
 from strategy.short import check_short_strategy
 
 # Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')
-secrets_client = boto3.client('secretsmanager')
 
 news_table_name = os.environ['DYNAMODB_TABLE_NAME']
 stats_table_name = os.environ['DYNAMODB_STATS_TABLE_NAME']
 index_data_table_name = os.environ['DYNAMODB_INDEX_TABLE_NAME']
 index_stocks_table_name = os.environ.get('DYNAMODB_INDEX_STOCKS_TABLE_NAME', '')
 market_data_table_name = os.environ.get('DYNAMODB_MARKET_DATA_TABLE_NAME', '')
-gemini_secret_name = os.environ.get('GEMINI_API_KEY_SECRET_NAME')
 
 news_table = dynamodb.Table(news_table_name) # type: ignore
 stats_table = dynamodb.Table(stats_table_name) # type: ignore
 index_data_table = dynamodb.Table(index_data_table_name) # type: ignore
 index_stocks_table = dynamodb.Table(index_stocks_table_name) if index_stocks_table_name else None # type: ignore
 market_data_table = dynamodb.Table(market_data_table_name) if market_data_table_name else None # type: ignore
-
-# Initialize Gemini client (lazy loading)
-_gemini_client = None
-
-def get_gemini_client():
-    global _gemini_client
-    if _gemini_client is None and gemini_secret_name:
-        try:
-            secret_response = secrets_client.get_secret_value(SecretId=gemini_secret_name)
-            api_key = secret_response['SecretString']
-            _gemini_client = genai.Client(api_key=api_key)
-        except Exception as e:
-            print(f"Failed to initialize Gemini client: {str(e)}")
-    return _gemini_client
 
 
 def decimal_default(obj):
@@ -523,113 +504,6 @@ def get_stock_rsi_for_date(date_str):
         return {}
 
 
-def refine_keywords_with_ai(keywords_list):
-    """
-    Use AI to consolidate and categorize similar keywords
-    Returns refined list of keywords with counts
-    """
-    if not keywords_list or len(keywords_list) == 0:
-        return []
-    
-    client = get_gemini_client()
-    if not client:
-        # Fallback to simple counter if AI not available
-        counter = Counter(keywords_list)
-        return [{'keyword': k, 'count': v, 'related': [k]} for k, v in counter.most_common()]
-    
-    try:
-        # 1. 先在本地統計頻率
-        counter = Counter(keywords_list)
-        
-        # 2. 只取頻率最高的 45 個關鍵字送給 AI (避免 Token 爆炸)
-        # 剩下的低頻關鍵字通常對趨勢分析影響較小，可以直接忽略或歸類為其他
-        most_common = [(k, v) for k, v in counter.most_common(45) if v > 1]
-        print(f"Refining {len(most_common)} keywords with AI\n{most_common}")
-        top_keywords = [k for k, _ in most_common]
-
-        keywords_str = ', '.join(top_keywords)
-        
-        prompt = prompt = f"""分析以下投資關鍵字並整理成精煉的類別。
-
-關鍵字列表:
-{keywords_str}
-
-請嚴格遵守以下規則:
-1. 將相似的關鍵字合併 (例如: "AI", "人工智慧", "GenAI" -> "AI")
-2. **最多只能產生 20 個主要類別**，請挑選最重要的。
-3. 忽略無意義或過於空泛的詞彙。
-4. origin_keywords 必須是輸入列表中的詞。
-
-請嚴格以 JSON 格式回傳，格式如下:
-{{
-  "refined_keywords": [
-    {{"keyword": "AI晶片", "origin_keywords": ["AI", "晶片", "GPU"]}},
-    {{"keyword": "電動車", "origin_keywords": ["EV", "特斯拉"]}}
-  ]
-}}"""
-        
-        response = client.models.generate_content(
-            model='gemini-2.5-flash-lite',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.1,
-                response_mime_type='application/json' # 強制 JSON 模式
-                # thinking_config=types.ThinkingConfig(
-                #     include_thoughts=False,
-                #     thinking_budget=2000, # 0 至 24576 or -1 for thinking until done
-                # )
-            )
-        )
-
-        # Print token usage
-        if hasattr(response, 'usage_metadata') and response.usage_metadata:
-            usage = response.usage_metadata
-            print(f"Token usage - Input: {usage.prompt_token_count}, Output: {usage.candidates_token_count}, Total: {usage.total_token_count}")
-        
-        # Extract JSON from response
-        response_text = response.text.strip()
-        # Remove markdown code blocks if present
-        if response_text.startswith('```'):
-            response_text = response_text.split('\n', 1)[1]
-            response_text = response_text.rsplit('```', 1)[0]
-        
-        result = json.loads(response_text)
-        refined_data = result.get('refined_keywords', [])
-
-        # 3. 重新計算合併後的次數 (使用原始的 counter)
-        final_result = []
-        processed_keywords = set()
-
-        for item in refined_data:
-            # 計算這個類別的總次數 (加總所有 origin_keywords 的原始次數)
-            total_count = sum(counter.get(k, 0) for k in item['origin_keywords'])
-            
-            # 記錄已處理的關鍵字
-            for k in item['origin_keywords']:
-                processed_keywords.add(k)
-
-            final_result.append({
-                'keyword': item['keyword'],
-                'count': total_count,
-                'related': list(set(item['origin_keywords']))
-            })
-        
-        # 排序並只回傳前 20 名
-        final_result.sort(key=lambda x: x['count'], reverse=True)
-        
-        time.sleep(1)  # 避免過快呼叫 AI 服務
-        print(f"AI refined top {len(top_keywords)} keywords into {len(final_result)} categories")
-        return final_result[:20]
-        
-    except Exception as e:
-        print(f"Error refining keywords with AI: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        # Fallback to simple counter
-        counter = Counter(keywords_list)
-        return [{'keyword': k, 'count': v} for k, v in counter.most_common(20)]
-
-
 def handler(event, context):
     """
     Aggregate daily statistics from news data
@@ -712,7 +586,6 @@ def aggregate_by_date(items):
     daily_stats = defaultdict(lambda: {
         'date': '',
         'total_news': 0,
-        'keywords': [],
         'stocks': defaultdict(lambda: {'name': '', 'mentions': 0, 'sentiment': 0, 'events': []})
     })
     
@@ -727,10 +600,7 @@ def aggregate_by_date(items):
         daily_stats[date]['date'] = date
         daily_stats[date]['total_news'] += 1
         
-        # 1. Investment Themes (Keywords)
-        daily_stats[date]['keywords'].extend(analysis.get('investment_themes', []))
-        
-        # 4. Stock Opportunities
+        # Stock Opportunities
         for entity in analysis.get('entities_mentioned', []):
             stock_id = entity['id']
             stock_name = entity['name']
@@ -757,11 +627,6 @@ def save_daily_stats(date, stats):
     Save daily statistics to DynamoDB
     """
     try:
-        # Refine keywords using AI
-        raw_keywords = stats['keywords']
-        refined_keywords = refine_keywords_with_ai(raw_keywords)
-        keywords = [x for x in refined_keywords if x['keyword'].lower() not in {"other", "其他"}]
-
         # Convert stocks data
         stocks = {
             data['name'] if key.lower() in {"null", "n/a"} or not key else key: {
@@ -786,11 +651,10 @@ def save_daily_stats(date, stats):
         if 'Item' in existing:
             # Update existing record with RSI and RSI_stock
             update_expr = 'SET updated_at = :updated_at, total_news = :total_news, ' \
-                         'keywords = :keywords, stocks = :stocks'
+                         'stocks = :stocks'
             attr_values = {
                 ':updated_at': int(datetime.now().timestamp()),
                 ':total_news': Decimal(str(stats['total_news'])),
-                ':keywords': keywords,
                 ':stocks': stocks
             }
             
@@ -813,7 +677,6 @@ def save_daily_stats(date, stats):
                 'date': date,
                 'updated_at': int(datetime.now().timestamp()),
                 'total_news': Decimal(str(stats['total_news'])),
-                'keywords': keywords,
                 'stocks': stocks
             }
             

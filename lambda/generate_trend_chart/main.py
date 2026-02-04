@@ -10,7 +10,6 @@ matplotlib.use('Agg')  # Must be before importing pyplot
 import matplotlib.font_manager
 import matplotlib.pyplot as plt
 
-from chart_keyword_momentum import generate_keyword_momentum_chart
 from chart_stock_opportunities import generate_stock_opportunities_chart
 
 # Register custom font
@@ -90,7 +89,6 @@ def handler(event, context):
         latest_date = max(date.fromisoformat(item['date']) for item in items)
         existing_keys = set()
 
-        keywords_data = {}
         stock_opportunities_data = {}
         for item in items:
             statistics_date = date.fromisoformat(item['date'])
@@ -98,7 +96,6 @@ def handler(event, context):
             if statistics_date == latest_date:
                 existing_keys = list(item.get('chart_s3_keys', []))
 
-            keywords_data[statistics_date] = item.get('keywords', [])
             stock_opportunities_data[statistics_date] = item.get('stocks', {})
 
         tz_utc8 = timezone(timedelta(hours=8))
@@ -120,28 +117,7 @@ def handler(event, context):
             ExpressionAttributeValues={':bucket': s3_bucket_name, ':days': days, ':keys': list(existing_keys)}
         )
 
-        # 1. Generate keyword momentum chart
-        keyword_momentum_chart_bytes = generate_keyword_momentum_chart(keywords_data)
-
-        s3_key = f"charts/keyword-momentum/{latest_date.isoformat()}-{timestamp}.png"
-        upload_chart_to_s3(keyword_momentum_chart_bytes, s3_bucket_name, s3_key, {
-            'date': latest_date.isoformat(),
-            'chart_type': 'keyword_momentum',
-            'generated_at': datetime.now(tz_utc8).isoformat()
-        })
-        existing_keys.append(s3_key)
-
-        stats_table.update_item(
-            Key={'date': latest_date.isoformat()},
-            UpdateExpression='SET keyword_momentum_chart_generated = :keyword_momentum_gen, keyword_momentum_chart_updated_at = :ts, chart_s3_keys = :keys',
-            ExpressionAttributeValues={
-            ':keyword_momentum_gen': True,
-            ':ts': datetime.now(tz_utc8).isoformat(),
-            ':keys': existing_keys
-            }
-        )
-        
-        # 2. Generate stock opportunities chart
+        # 1. Generate stock opportunities chart
         stock_opportunities_chart_bytes = generate_stock_opportunities_chart(stock_opportunities_data)
 
         s3_key = f"charts/stock-opportunities/{latest_date.isoformat()}-{timestamp}.png"
