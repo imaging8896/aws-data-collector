@@ -209,10 +209,11 @@ def handler(event, context):
 
 def delete_batch(batch: types.BatchJob):
     # Delete source and destination files
+    client = get_gemini_client()
     if batch.src:
         source_file_name = batch.src.file_name
         try:
-            _gemini_client.files.delete(name=source_file_name)  # type: ignore[union-attr]
+            client.files.delete(name=source_file_name)
             print(f"Deleted source file: {source_file_name}")
         except Exception as delete_error:
             import traceback
@@ -221,7 +222,7 @@ def delete_batch(batch: types.BatchJob):
             print(f"Error deleting source file {source_file_name}: {delete_error}")
 
     try:
-        _gemini_client.batches.delete(name=batch.name)  # type: ignore[union-attr]
+        client.batches.delete(name=batch.name)
         print(f"Deleted batch: {batch.name}")
     except Exception as e:
         import traceback
