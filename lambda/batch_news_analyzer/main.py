@@ -1,31 +1,33 @@
 import json
 import os
-import boto3
 from datetime import datetime
+
+import boto3
 from google import genai
 
 # Initialize AWS clients
-dynamodb = boto3.resource('dynamodb')
-secrets_client = boto3.client('secretsmanager')
+dynamodb = boto3.resource("dynamodb")
+secrets_client = boto3.client("secretsmanager")
 
 # Environment variables
-news_table_name = os.environ['DYNAMODB_TABLE_NAME']
-batch_table_name = os.environ['DYNAMODB_BATCH_TABLE_NAME']
-gemini_secret_name = os.environ['GEMINI_API_KEY_SECRET_NAME']
+news_table_name = os.environ["DYNAMODB_TABLE_NAME"]
+batch_table_name = os.environ["DYNAMODB_BATCH_TABLE_NAME"]
+gemini_secret_name = os.environ["GEMINI_API_KEY_SECRET_NAME"]
 
-news_table = dynamodb.Table(news_table_name) # type: ignore
-batch_table = dynamodb.Table(batch_table_name) # type: ignore
+news_table = dynamodb.Table(news_table_name)  # type: ignore
+batch_table = dynamodb.Table(batch_table_name)  # type: ignore
 
-categories = os.environ['CATEGORIES'].split(',')
+categories = os.environ["CATEGORIES"].split(",")
 
 # Cache Gemini client
 _gemini_client = None
+
 
 def get_gemini_client():
     global _gemini_client
     if _gemini_client is None:
         secret_response = secrets_client.get_secret_value(SecretId=gemini_secret_name)
-        api_key = secret_response['SecretString']
+        api_key = secret_response["SecretString"]
         _gemini_client = genai.Client(api_key=api_key)
     return _gemini_client
 
@@ -38,17 +40,11 @@ def handler(event, context):
     try:
         # Scan for news items without analysis
         news_items_to_analyze = scan_unanalyzed_news()
-        
+
         if not news_items_to_analyze:
             print("No news items to analyze")
-            return {
-                'statusCode': 200,
-                'body': json.dumps({
-                    'message': 'No unanalyzed news items found',
-                    'count': 0
-                })
-            }
-        
+            return {"statusCode": 200, "body": json.dumps({"message": "No unanalyzed news items found", "count": 0})}
+
         print(f"Found {len(news_items_to_analyze)} news items to analyze")
 
         # if len(news_items_to_analyze) < 5:
@@ -60,28 +56,23 @@ def handler(event, context):
         #             'count': len(news_items_to_analyze)
         #         })
         #     }
-        
+
         # Submit combined batch job
         submit_combined_batch(news_items_to_analyze[:20])
-        
+
         return {
-            'statusCode': 200,
-            'body': json.dumps({
-                'message': 'Batch analysis request submitted',
-                'count': len(news_items_to_analyze)
-            })
+            "statusCode": 200,
+            "body": json.dumps({"message": "Batch analysis request submitted", "count": len(news_items_to_analyze)}),
         }
-        
+
     except Exception as e:
         print(f"Error: {str(e)}")
         import traceback
+
         traceback.print_exc()
         return {
-            'statusCode': 500,
-            'body': json.dumps({
-                'message': 'Error submitting batch analysis request',
-                'error': str(e)
-            })
+            "statusCode": 500,
+            "body": json.dumps({"message": "Error submitting batch analysis request", "error": str(e)}),
         }
 
 
@@ -92,63 +83,61 @@ def scan_unanalyzed_news():
     Returns list of items with url, title, and content
     """
     unanalyzed_items = []
-    
+
     try:
         # First, get all URLs that are in pending batches
         pending_urls = set()
         batch_response = batch_table.scan(
-            FilterExpression='#status = :status',
-            ExpressionAttributeNames={'#status': 'status'},
-            ExpressionAttributeValues={':status': 'PENDING'}
+            FilterExpression="#status = :status",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={":status": "PENDING"},
         )
 
         set().update()
-        
-        for item in batch_response.get('Items', []):
-            if item['url'] == '__metadata__':
-                pending_urls.update([mapping['url'] for mapping in item['metadata']])
-            else:  
-                pending_urls.add(item['url'])
-        
+
+        for item in batch_response.get("Items", []):
+            if item["url"] == "__metadata__":
+                pending_urls.update([mapping["url"] for mapping in item["metadata"]])
+            else:
+                pending_urls.add(item["url"])
+
         # Handle pagination for batch table
-        while 'LastEvaluatedKey' in batch_response:
+        while "LastEvaluatedKey" in batch_response:
             batch_response = batch_table.scan(
-                FilterExpression='#status = :status',
-                ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={':status': 'PENDING'},
-                ExclusiveStartKey=batch_response['LastEvaluatedKey']
+                FilterExpression="#status = :status",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={":status": "PENDING"},
+                ExclusiveStartKey=batch_response["LastEvaluatedKey"],
             )
-            for item in batch_response.get('Items', []):
-                if item['url'] == '__metadata__':
-                    pending_urls.update([mapping['url'] for mapping in item['metadata']])
-                else:  
-                    pending_urls.add(item['url'])
-        
+            for item in batch_response.get("Items", []):
+                if item["url"] == "__metadata__":
+                    pending_urls.update([mapping["url"] for mapping in item["metadata"]])
+                else:
+                    pending_urls.add(item["url"])
+
         print(f"Found {len(pending_urls)} URLs in pending batches")
-        
+
         # Scan for items without analysis attribute
-        response = news_table.scan(
-            FilterExpression='attribute_not_exists(analysis) AND attribute_exists(content)'
-        )
-        
+        response = news_table.scan(FilterExpression="attribute_not_exists(analysis) AND attribute_exists(content)")
+
         # Filter out URLs already in pending batches
-        for item in response.get('Items', []):
-            if item['url'] not in pending_urls:
+        for item in response.get("Items", []):
+            if item["url"] not in pending_urls:
                 unanalyzed_items.append(item)
-        
+
         # Handle pagination
-        while 'LastEvaluatedKey' in response:
+        while "LastEvaluatedKey" in response:
             response = news_table.scan(
-                FilterExpression='attribute_not_exists(analysis) AND attribute_exists(content)',
-                ExclusiveStartKey=response['LastEvaluatedKey']
+                FilterExpression="attribute_not_exists(analysis) AND attribute_exists(content)",
+                ExclusiveStartKey=response["LastEvaluatedKey"],
             )
-            for item in response.get('Items', []):
-                if item['url'] not in pending_urls:
+            for item in response.get("Items", []):
+                if item["url"] not in pending_urls:
                     unanalyzed_items.append(item)
-        
+
         print(f"Found {len(unanalyzed_items)} unanalyzed items (excluding {len(pending_urls)} in pending batches)")
         return unanalyzed_items
-        
+
     except Exception as e:
         print(f"Error scanning for unanalyzed news: {str(e)}")
         raise
@@ -159,82 +148,72 @@ def submit_combined_batch(news_items):
     Submit combined batch request to Gemini for all unanalyzed news items
     """
     client = get_gemini_client()
-    
+
     # Create temporary JSONL file with all requests
     batch_timestamp = int(datetime.now().timestamp())
     file_path = f"/tmp/batch_{batch_timestamp}.jsonl"
-    
+
     # Initialize URL order mapping
     url_order_mapping = []
-    
+
     try:
-        with open(file_path, 'w', encoding='utf-8') as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             for idx, item in enumerate(news_items):
-                url = item['url']
-                title = item['title']
-                content = item['content']
+                url = item["url"]
+                title = item["title"]
+                content = item["content"]
 
                 # 記錄此請求索引對應的 URL
-                url_order_mapping.append({
-                    'request_index': idx,
-                    'url': url
-                })
-                
+                url_order_mapping.append({"request_index": idx, "url": url})
+
                 # Generate prompt for this article
                 prompt = generate_analysis_prompt(title, content)
-                
+
                 # Create request object for Batch API (one line per request)
                 request_body = {
                     "custom_id": f"request_{idx}",  # 用於識別此請求
                     "request": {
-                        "contents": [
-                            {
-                                "parts": [
-                                    {"text": prompt}
-                                ]
-                            }
-                        ],
+                        "contents": [{"parts": [{"text": prompt}]}],
                         "generationConfig": {
                             # "thinking_config": {
                             #     # Gemini 2.5 Flash 1~24567
                             #     # Gemini 2.5 Pro 128~32768
                             #     # Gemini 2.5 Flash lite 512~24567
-                            #     "thinking_budget": 10000, 
+                            #     "thinking_budget": 10000,
                             # },
                             "responseMimeType": "application/json",
-                            "temperature": 0.2
-                        }
-                    }
+                            "temperature": 0.2,
+                        },
+                    },
                 }
-                
+
                 # Write one line per request (JSONL format)
-                f.write(json.dumps(request_body) + '\n')
-        
+                f.write(json.dumps(request_body) + "\n")
+
         # Upload file to Gemini
-        upload_file = client.files.upload(
-            file=file_path,
-            config={'mime_type': 'application/jsonl'}
-        )
-        
+        upload_file = client.files.upload(file=file_path, config={"mime_type": "application/jsonl"})
+
         # Create batch job
         batch_job = client.batches.create(
             # model='gemini-3-flash-preview',
-            model='gemini-2.5-flash',
-            src=upload_file.name # type: ignore
+            model="gemini-2.5-flash",
+            src=upload_file.name,  # type: ignore
         )
 
         # Store batch ID with all URLs in DynamoDB
         created_at = batch_timestamp
-        batch_table.put_item(Item={
-            'batch_id': batch_job.name,
-            'url': '__metadata__',  # 特殊標記
-            'created_at': created_at,
-            'status': 'PENDING',
-            'metadata': url_order_mapping
-        })
-        
+        batch_table.put_item(
+            Item={
+                "batch_id": batch_job.name,
+                "url": "__metadata__",  # 特殊標記
+                "created_at": created_at,
+                "status": "PENDING",
+                "metadata": url_order_mapping,
+            }
+        )
+
         print(f"Created combined batch job {batch_job.name} for {len(news_items)} articles")
-        
+
     except Exception as e:
         print(f"Error submitting batch job: {str(e)}")
         raise
@@ -248,8 +227,6 @@ def generate_analysis_prompt(title, content):
     """
     Generate analysis prompt for a news article
     """
-    categories_str = ', '.join(categories)
-    
     return f"""
 你是一位專業的經濟新聞分析師,專門分析新聞的內容對市場和產業的影響。
 請以此新聞內容為唯一依據，進行以下分析:
@@ -275,6 +252,6 @@ JSON 格式要求，請嚴格遵守，回應以下object in Json：
 
 
 if __name__ == "__main__":
-    test_event = {}
+    test_event: dict = {}
     result = handler(test_event, None)
-    print(json.dumps(json.loads(result['body']), indent=2, ensure_ascii=False))
+    print(json.dumps(json.loads(result["body"]), indent=2, ensure_ascii=False))

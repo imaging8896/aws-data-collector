@@ -1,8 +1,8 @@
 # Ruff configuration for AWS Data Collector Lambda functions
 # https://docs.astral.sh/ruff/configuration/
 
-target-version = "py312"
-line-length = 120
+target-version = "py313"
+line-length = 160
 
 [lint]
 select = [

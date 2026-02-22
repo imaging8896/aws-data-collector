@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import date, datetime
 from decimal import Decimal
 
 from curl_cffi import requests
@@ -11,7 +11,7 @@ def get_indexes(data_date: date):
 
     if response.status_code != 200:
         raise Exception(f"API request failed with status {response.status_code}: {response.text}")
-    
+
     data = response.json()
 
     print(f"Got data {data}")
@@ -26,12 +26,12 @@ def get_indexes(data_date: date):
     #         "show_seq": "0"
     #     },
     return {
-        index_data['idx_name'].strip().replace('指數', ''): {
-            'value': Decimal(index_data['idx_today'].replace(',', '')),
-            'date': datetime.strptime(index_data['trn_date'], '%Y%m%d').date().isoformat(),
-            'diff': Decimal(index_data['idx_mark'] + index_data['idx_diff'].replace(',', '')),
-            'diff_percent': Decimal(index_data['idx_mark'] + index_data['idx_diff_percent'].replace(',', '')),
+        index_data["idx_name"].strip().replace("指數", ""): {
+            "value": Decimal(index_data["idx_today"].replace(",", "")),
+            "date": datetime.strptime(index_data["trn_date"], "%Y%m%d").date().isoformat(),
+            "diff": Decimal(index_data["idx_mark"] + index_data["idx_diff"].replace(",", "")),
+            "diff_percent": Decimal(index_data["idx_mark"] + index_data["idx_diff_percent"].replace(",", "")),
         }
-        for index_data in data['items']
-        if index_data['idx_today'].strip() != '--'
+        for index_data in data["items"]
+        if index_data["idx_today"].strip() != "--"
     }
