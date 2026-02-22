@@ -19,3 +19,7 @@ rule "terraform_documented_variables" {
 rule "terraform_typed_variables" {
   enabled = true
 }
+
+rule "terraform_unused_declarations" {
+  enabled = false
+}
