@@ -25,7 +25,7 @@ resource "aws_secretsmanager_secret_version" "gemini_api_key" {
 resource "aws_ssm_parameter" "discord_webhook_url" {
   name        = "/${var.environment}/${var.project_name}/discord-webhook-url"
   description = "Discord webhook URL for trading signal notifications"
-  type        = "SecureString"  # Encrypted at rest
+  type        = "SecureString" # Encrypted at rest
   value       = var.discord_webhook_url
 
   tags = {

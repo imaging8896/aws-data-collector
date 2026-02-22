@@ -12,12 +12,12 @@ data "archive_file" "lambda_check_trading_signals_zip" {
 resource "aws_lambda_function" "check_trading_signals" {
   filename         = data.archive_file.lambda_check_trading_signals_zip.output_path
   function_name    = "${var.environment}-${var.project_name}-check-trading-signals"
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "main.handler"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "main.handler"
   source_code_hash = data.archive_file.lambda_check_trading_signals_zip.output_base64sha256
-  runtime         = var.lambda_runtime
-  memory_size     = 256
-  timeout         = 300
+  runtime          = var.lambda_runtime
+  memory_size      = 256
+  timeout          = 300
   architectures    = ["arm64"]
 
   environment {
@@ -51,7 +51,7 @@ resource "aws_cloudwatch_log_group" "lambda_check_trading_signals_logs" {
 resource "aws_cloudwatch_event_rule" "check_signals_schedule" {
   name                = "${var.environment}-${var.project_name}-check-signals-schedule"
   description         = "Trigger trading signals check daily at 8:00 AM Taiwan time"
-  schedule_expression = "cron(0 0 * * ? *)"  # 8:00 AM Taiwan = 00:00 UTC
+  schedule_expression = "cron(0 0 * * ? *)" # 8:00 AM Taiwan = 00:00 UTC
 
   tags = {
     Project     = var.project_name

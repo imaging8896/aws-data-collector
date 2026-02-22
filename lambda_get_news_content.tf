@@ -42,19 +42,19 @@ resource "aws_lambda_layer_version" "content_dependencies_layer" {
 resource "aws_lambda_function" "content_collector" {
   filename         = data.archive_file.lambda_content_zip.output_path
   function_name    = "${var.environment}-${var.project_name}-content-collector"
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "main.handler"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "main.handler"
   source_code_hash = data.archive_file.lambda_content_zip.output_base64sha256
-  runtime         = var.lambda_runtime
-  memory_size     = 192
-  timeout         = 60
+  runtime          = var.lambda_runtime
+  memory_size      = 192
+  timeout          = 60
   architectures    = ["arm64"]
   layers           = [aws_lambda_layer_version.content_dependencies_layer.arn]
 
   environment {
     variables = {
-      DYNAMODB_TABLE_NAME        = aws_dynamodb_table.news_urls_table.name
-      ENVIRONMENT                = var.environment
+      DYNAMODB_TABLE_NAME = aws_dynamodb_table.news_urls_table.name
+      ENVIRONMENT         = var.environment
     }
   }
 

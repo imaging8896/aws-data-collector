@@ -4,15 +4,15 @@
 resource "aws_sqs_queue" "news_content_queue" {
   name                       = "${var.environment}-${var.project_name}-news-content-queue"
   delay_seconds              = 0
-  max_message_size           = 262144  # 256 KB
-  message_retention_seconds  = 345600  # 4 days
+  max_message_size           = 262144 # 256 KB
+  message_retention_seconds  = 345600 # 4 days
   receive_wait_time_seconds  = 0
-  visibility_timeout_seconds = var.lambda_timeout * 6  # 6x Lambda timeout for retries
+  visibility_timeout_seconds = var.lambda_timeout * 6 # 6x Lambda timeout for retries
 
   # Dead Letter Queue for failed messages
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.news_content_dlq.arn
-    maxReceiveCount     = 3  # Retry up to 3 times
+    maxReceiveCount     = 3 # Retry up to 3 times
   })
 
   tags = {
@@ -25,7 +25,7 @@ resource "aws_sqs_queue" "news_content_queue" {
 # Dead Letter Queue for failed messages
 resource "aws_sqs_queue" "news_content_dlq" {
   name                      = "${var.environment}-${var.project_name}-news-content-dlq"
-  message_retention_seconds = 1209600  # 14 days
+  message_retention_seconds = 1209600 # 14 days
 
   tags = {
     Project     = var.project_name
@@ -38,7 +38,7 @@ resource "aws_sqs_queue" "news_content_dlq" {
 resource "aws_lambda_event_source_mapping" "sqs_to_content_collector" {
   event_source_arn = aws_sqs_queue.news_content_queue.arn
   function_name    = aws_lambda_function.content_collector.arn
-  batch_size       = 1  # Process one URL at a time
+  batch_size       = 1 # Process one URL at a time
   enabled          = true
 
   # Process messages with best effort

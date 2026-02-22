@@ -12,12 +12,12 @@ data "archive_file" "lambda_aggregate_stats_zip" {
 resource "aws_lambda_function" "aggregate_stats" {
   filename         = data.archive_file.lambda_aggregate_stats_zip.output_path
   function_name    = "${var.environment}-${var.project_name}-aggregate-stats"
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "main.handler"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "main.handler"
   source_code_hash = data.archive_file.lambda_aggregate_stats_zip.output_base64sha256
-  runtime         = var.lambda_runtime
-  memory_size     = 256
-  timeout         = 120
+  runtime          = var.lambda_runtime
+  memory_size      = 256
+  timeout          = 120
   architectures    = ["arm64"]
 
   environment {
@@ -67,7 +67,7 @@ resource "aws_cloudwatch_event_target" "aggregate_stats_target" {
   rule      = aws_cloudwatch_event_rule.aggregate_stats_schedule.name
   target_id = "AggregateStatsLambda"
   arn       = aws_lambda_function.aggregate_stats.arn
-  
+
   input = jsonencode({
     days = 2
   })
@@ -85,7 +85,7 @@ resource "aws_lambda_permission" "allow_eventbridge_aggregate_stats" {
 # Lambda Destination: Trigger static website generator on success
 resource "aws_lambda_function_event_invoke_config" "aggregate_stats_destination" {
   function_name = aws_lambda_function.aggregate_stats.function_name
-  
+
   # Disable automatic retries
   maximum_retry_attempts = 0
 

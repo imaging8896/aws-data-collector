@@ -12,13 +12,13 @@ data "archive_file" "lambda_static_website_zip" {
 resource "aws_lambda_function" "static_website_generator" {
   filename         = data.archive_file.lambda_static_website_zip.output_path
   function_name    = "${var.environment}-${var.project_name}-static-website-generator"
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "main.handler"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "main.handler"
   source_code_hash = data.archive_file.lambda_static_website_zip.output_base64sha256
-  runtime         = var.lambda_runtime
-  memory_size     = 128
-  timeout         = 30
-  architectures   = ["arm64"]
+  runtime          = var.lambda_runtime
+  memory_size      = 128
+  timeout          = 30
+  architectures    = ["arm64"]
 
   environment {
     variables = {

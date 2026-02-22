@@ -29,11 +29,11 @@ resource "terraform_data" "install_batch_analyzer_dependencies" {
 }
 
 resource "aws_lambda_layer_version" "batch_analyzer_layer" {
-  filename               = "${path.module}/lambda_batch_analyzer_layer.zip"
-  layer_name             = "${var.environment}-${var.project_name}-batch-analyzer"
-  compatible_runtimes    = [var.lambda_runtime]
+  filename                 = "${path.module}/lambda_batch_analyzer_layer.zip"
+  layer_name               = "${var.environment}-${var.project_name}-batch-analyzer"
+  compatible_runtimes      = [var.lambda_runtime]
   compatible_architectures = ["arm64"]
-  source_code_hash       = terraform_data.install_batch_analyzer_dependencies.id
+  source_code_hash         = terraform_data.install_batch_analyzer_dependencies.id
 
   depends_on = [terraform_data.install_batch_analyzer_dependencies]
 }
@@ -42,21 +42,21 @@ resource "aws_lambda_layer_version" "batch_analyzer_layer" {
 resource "aws_lambda_function" "batch_news_analyzer" {
   filename         = data.archive_file.batch_analyzer_zip.output_path
   function_name    = "${var.environment}-${var.project_name}-batch-analyzer"
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "main.handler"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "main.handler"
   source_code_hash = data.archive_file.batch_analyzer_zip.output_base64sha256
-  runtime         = var.lambda_runtime
-  memory_size     = 128
-  timeout         = 60
+  runtime          = var.lambda_runtime
+  memory_size      = 128
+  timeout          = 60
   architectures    = ["arm64"]
   layers           = [aws_lambda_layer_version.batch_analyzer_layer.arn]
 
   environment {
     variables = {
-      DYNAMODB_TABLE_NAME         = aws_dynamodb_table.news_urls_table.name
-      DYNAMODB_BATCH_TABLE_NAME   = aws_dynamodb_table.batch_requests_table.name
-      GEMINI_API_KEY_SECRET_NAME  = aws_secretsmanager_secret.gemini_api_key.name
-      CATEGORIES                  = var.categories
+      DYNAMODB_TABLE_NAME        = aws_dynamodb_table.news_urls_table.name
+      DYNAMODB_BATCH_TABLE_NAME  = aws_dynamodb_table.batch_requests_table.name
+      GEMINI_API_KEY_SECRET_NAME = aws_secretsmanager_secret.gemini_api_key.name
+      CATEGORIES                 = var.categories
     }
   }
 

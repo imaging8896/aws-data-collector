@@ -12,12 +12,12 @@ data "archive_file" "lambda_notify_discord_zip" {
 resource "aws_lambda_function" "notify_discord" {
   filename         = data.archive_file.lambda_notify_discord_zip.output_path
   function_name    = "${var.environment}-${var.project_name}-notify-discord"
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "main.handler"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "main.handler"
   source_code_hash = data.archive_file.lambda_notify_discord_zip.output_base64sha256
-  runtime         = var.lambda_runtime
-  memory_size     = 128
-  timeout         = 30
+  runtime          = var.lambda_runtime
+  memory_size      = 128
+  timeout          = 30
   architectures    = ["arm64"]
 
   environment {
