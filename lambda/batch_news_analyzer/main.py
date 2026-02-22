@@ -1,7 +1,8 @@
 import json
 import os
-import boto3
 from datetime import datetime
+
+import boto3
 from google import genai
 
 # Initialize AWS clients

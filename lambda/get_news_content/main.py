@@ -2,13 +2,8 @@ import json
 import os
 import traceback
 
-from datetime import datetime
-from google import genai
-from google.genai import types
-
 import boto3
 import curl_cffi
-
 from parser.general import GeneralNewsHTMLParser
 from request import request_get_news
 

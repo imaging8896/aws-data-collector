@@ -1,7 +1,8 @@
 import json
 import os
-import boto3
 from datetime import datetime
+
+import boto3
 from open_news import google
 
 # Initialize AWS clients

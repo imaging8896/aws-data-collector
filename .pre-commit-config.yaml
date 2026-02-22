@@ -1,0 +1,22 @@
+# Pre-commit hooks configuration
+# Run mypy and ruff to check code quality on each commit
+# Install: pip install pre-commit && pre-commit install
+# See https://pre-commit.com for more information
+
+repos:
+  # Ruff - Fast Python linter and formatter
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  # MyPy - Static type checker
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.15.0
+    hooks:
+      - id: mypy
+        args: [--config-file=mypy.ini]
+        additional_dependencies: [boto3-stubs]
+        pass_filenames: false

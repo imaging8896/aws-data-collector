@@ -1,7 +1,8 @@
 import json
 import os
-import urllib3
+
 import boto3
+import urllib3
 
 # Initialize clients
 http = urllib3.PoolManager()

@@ -1,7 +1,8 @@
 import json
 import os
-from datetime import datetime, timedelta, date
+from datetime import date, datetime, timedelta
 from decimal import Decimal
+
 import boto3
 from strategy.medium import check_medium_strategy
 from strategy.short import check_short_strategy

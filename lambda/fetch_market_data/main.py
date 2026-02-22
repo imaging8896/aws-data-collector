@@ -1,8 +1,8 @@
 import json
 import os
 import time
-from datetime import datetime, timezone, timedelta, date
-from decimal import Decimal
+from datetime import date, datetime, timedelta, timezone
+
 import boto3
 
 # Initialize AWS clients

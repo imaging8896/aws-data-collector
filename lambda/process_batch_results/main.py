@@ -1,8 +1,9 @@
 import decimal
 import json
 import os
-import boto3
 from datetime import datetime, timedelta, timezone
+
+import boto3
 from google import genai
 from google.genai import types
 

@@ -1,6 +1,7 @@
 import json
 import os
 from datetime import datetime
+
 import boto3
 from google import genai
 from google.genai import types
@@ -84,7 +85,7 @@ def find_representative_stocks_batch(client, index_names):
         Dict mapping index_name to list of stock dicts
     """
     if not client:
-        print(f"AI client not available for finding stocks")
+        print("AI client not available for finding stocks")
         return {}
     
     if not index_names:

@@ -14,6 +14,7 @@
 
 from decimal import Decimal
 
+
 def check_short_strategy(index_data, historical_data):
     """
     Check if short-term warrant trading strategy conditions are met

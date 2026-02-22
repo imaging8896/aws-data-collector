@@ -1,6 +1,7 @@
 import json
 import os
 from datetime import datetime
+
 import boto3
 
 # Initialize AWS clients
@@ -112,13 +113,13 @@ def check_signals_and_notify(date_str, stats_data):
             
             print(f"Signal detected for {index_name}:")
             if has_medium_buy:
-                print(f"  - Medium-term BUY signal")
+                print("  - Medium-term BUY signal")
             if has_short_buy:
-                print(f"  - Short-term BUY signal")
+                print("  - Short-term BUY signal")
             if has_medium_sell:
-                print(f"  - Medium-term SELL signal")
+                print("  - Medium-term SELL signal")
             if has_short_sell:
-                print(f"  - Short-term SELL signal")
+                print("  - Short-term SELL signal")
             
             # Get stock signals from RSI_stock data (empty for broad market indexes)
             if is_broad_market_index:
