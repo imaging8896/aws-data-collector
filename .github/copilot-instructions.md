@@ -18,6 +18,31 @@ terraform apply         # Apply infrastructure changes
 terraform destroy       # Tear down infrastructure
 ```
 
+### Python Code Quality (Ruff)
+All Python scripts in the `lambda/` directory must be formatted and linted with [Ruff](https://docs.astral.sh/ruff/) before committing.
+
+```bash
+# Install Ruff (if not already installed)
+pip install ruff
+
+# Format a Lambda function directory
+ruff format lambda/<function_name>/
+
+# Lint a Lambda function directory (auto-fix safe issues)
+ruff check --fix lambda/<function_name>/
+
+# Format and lint all Lambda functions at once
+ruff format lambda/
+ruff check --fix lambda/
+```
+
+#### Ruff Guidelines for Lambda Functions
+- Always run `ruff format` before `ruff check` to apply consistent formatting first
+- Ruff is configured via `ruff.toml` at the project root — do not add per-file `# noqa` overrides unless strictly necessary
+- Target Python version is set to match the Lambda runtime (Python 3.12)
+- Line length is set to 120 characters to accommodate typical Lambda handler patterns
+- Enabled rule sets: `E`, `F`, `I` (pycodestyle errors, Pyflakes, isort) — keep imports sorted and unused imports removed
+
 ### Sensitive Data
 - **Never commit** `.tfvars` or `.tfvars.json` files - these contain environment-specific and sensitive data
 - Use `.tfvars` files for environment-specific variables (dev, staging, prod)
