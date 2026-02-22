@@ -5,25 +5,25 @@ from curl_cffi import requests
 
 
 def get_investor(data_date: date):
-    data_date_str_without_dash = data_date.isoformat().replace('-', '')
+    data_date_str_without_dash = data_date.isoformat().replace("-", "")
     url = f"https://www.twse.com.tw/rwd/zh/fund/BFI82U?type=day&dayDate={data_date_str_without_dash}&response=json"
 
     response = requests.get(url, impersonate="chrome")
 
     if response.status_code != 200:
         raise Exception(f"API request failed with status {response.status_code}: {response.text}")
-    
+
     data = response.json()
 
-    if data.get('stat') == '很抱歉，沒有符合條件的資料!':
+    if data.get("stat") == "很抱歉，沒有符合條件的資料!":
         return
-    
-    if data.get('stat') != 'OK':
+
+    if data.get("stat") != "OK":
         raise Exception(f"API error:\n{data}")
-    
-    if data.get('date') != data_date_str_without_dash:
+
+    if data.get("date") != data_date_str_without_dash:
         raise Exception(f"Returned data date {data.get('date')} does not match requested date {data_date_str_without_dash}\n{data}")
-    
+
     print(f"Got data {data['title']}")
 
     # [
@@ -42,10 +42,10 @@ def get_investor(data_date: date):
     # "本資訊以當日原始成交情形統計，不以證券商申報錯帳、更正帳號等調整後資料統計。"
     # "外幣成交值係以本公司當日下午3時30分公告匯率換算後加入成交金額。<br>公告匯率請參考本公司首頁>產品與服務>交易系統>雙幣ETF專區>代號對應及每日公告匯率。
     return {
-        name.replace('及陸資(不含外資自營商)', ''): {
-            'buy': Decimal(buy.replace(',', '')),
-            'sell': Decimal(sell.replace(',', '')),
+        name.replace("及陸資(不含外資自營商)", ""): {
+            "buy": Decimal(buy.replace(",", "")),
+            "sell": Decimal(sell.replace(",", "")),
         }
-        for name, buy, sell, _ in data['data']
-        if name not in ['合計', '外資自營商']
+        for name, buy, sell, _ in data["data"]
+        if name not in ["合計", "外資自營商"]
     }

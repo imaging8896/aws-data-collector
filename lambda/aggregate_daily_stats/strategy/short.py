@@ -18,7 +18,7 @@ from decimal import Decimal
 def check_short_strategy(index_data, historical_data):
     """
     Check if short-term warrant trading strategy conditions are met
-    
+
     Args:
         index_data: dict containing current day RSI, MA values and current price
         {
@@ -32,7 +32,7 @@ def check_short_strategy(index_data, historical_data):
             {'value': price, 'turnover': turnover, 'date': date_str},  # Yesterday
             ...
         ]
-    
+
     Returns:
         dict with strategy signals:
         {
@@ -48,81 +48,72 @@ def check_short_strategy(index_data, historical_data):
             }
         }
     """
-    result = {
-        'buy_signal': False,
-        'sell_signal': False,
-        'conditions': {}
-    }
-    
+    result = {"buy_signal": False, "sell_signal": False, "conditions": {}}
+
     try:
         # Extract current day values
-        current_price = float(index_data.get('value', 0))
-        rsi_5 = float(index_data.get('RSI_5', 0))
-        current_turnover = float(index_data.get('turnover', 0))
-        
+        current_price = float(index_data.get("value", 0))
+        rsi_5 = float(index_data.get("RSI_5", 0))
+        current_turnover = float(index_data.get("turnover", 0))
+
         # Check if we have historical data
         if not historical_data or len(historical_data) < 5:
             return result
-        
+
         # Get yesterday's price for daily gain calculation
-        prev_price = float(historical_data[1].get('value', 0)) if len(historical_data) > 1 else 0
-        
+        prev_price = float(historical_data[1].get("value", 0)) if len(historical_data) > 1 else 0
+
         # Get previous day's low (use 'low' if available, otherwise use 'value')
         prev_day = historical_data[1] if len(historical_data) > 1 else {}
-        prev_low = float(prev_day.get('low', prev_day.get('value', 0)))
-        
+        prev_low = float(prev_day.get("low", prev_day.get("value", 0)))
+
         # Calculate conditions
-        
+
         # 1. Price breaks 3-day high (use 'high' if available, otherwise use 'value')
         three_day_highs = []
         for i in range(1, min(4, len(historical_data))):
             day_data = historical_data[i]
-            high_price = float(day_data.get('high', day_data.get('value', 0)))
+            high_price = float(day_data.get("high", day_data.get("value", 0)))
             three_day_highs.append(high_price)
         three_day_high = max(three_day_highs) if three_day_highs else 0
         price_breaks_3day_high = current_price > three_day_high
-        
+
         # 2. Daily gain > 1%
         daily_gain_pct = ((current_price - prev_price) / prev_price * 100) if prev_price > 0 else 0
         daily_gain_above_1pct = daily_gain_pct > 1.0
-        
+
         # 3. RSI 5 between 50 and 65
         rsi5_in_range_50_65 = 50 <= rsi_5 <= 65
-        
+
         # 4. Turnover above 5-day average
-        five_day_turnovers = [float(historical_data[i].get('turnover', 0)) for i in range(min(5, len(historical_data)))]
+        five_day_turnovers = [float(historical_data[i].get("turnover", 0)) for i in range(min(5, len(historical_data)))]
         avg_5day_turnover = sum(five_day_turnovers) / len(five_day_turnovers) if five_day_turnovers else 0
         turnover_above_5day_avg = current_turnover > avg_5day_turnover if avg_5day_turnover > 0 else False
-        
+
         # 5. RSI 5 > 85 (sell signal)
         rsi5_above_85 = rsi_5 > 85
-        
+
         # 6. Price below previous day's low (sell signal)
         price_below_prev_low = current_price < prev_low
-        
-        result['conditions'] = {
-            'price_breaks_3day_high': price_breaks_3day_high,
-            'daily_gain_above_1pct': daily_gain_above_1pct,
-            'daily_gain_pct': Decimal(str(round(daily_gain_pct, 2))),
-            'rsi5_in_range_50_65': rsi5_in_range_50_65,
-            'turnover_above_5day_avg': turnover_above_5day_avg,
-            'rsi5_above_85': rsi5_above_85,
-            'price_below_prev_low': price_below_prev_low
+
+        result["conditions"] = {
+            "price_breaks_3day_high": price_breaks_3day_high,
+            "daily_gain_above_1pct": daily_gain_above_1pct,
+            "daily_gain_pct": Decimal(str(round(daily_gain_pct, 2))),
+            "rsi5_in_range_50_65": rsi5_in_range_50_65,
+            "turnover_above_5day_avg": turnover_above_5day_avg,
+            "rsi5_above_85": rsi5_above_85,
+            "price_below_prev_low": price_below_prev_low,
         }
-        
+
         # Buy signal: Price breaks 3-day high AND daily gain > 1% AND RSI 5 in 50-65 range AND turnover above 5-day avg
-        result['buy_signal'] = (
-            price_breaks_3day_high and 
-            daily_gain_above_1pct and 
-            rsi5_in_range_50_65 and 
-            turnover_above_5day_avg
-        )
-        
+        result["buy_signal"] = price_breaks_3day_high and daily_gain_above_1pct and rsi5_in_range_50_65 and turnover_above_5day_avg
+
         # Sell signal: RSI 5 > 85 OR price below previous low
-        result['sell_signal'] = rsi5_above_85 or price_below_prev_low
-        
+        result["sell_signal"] = rsi5_above_85 or price_below_prev_low
+
         return result
-        
+
     except (ValueError, TypeError, KeyError) as e:
         print(f"Error checking short strategy: {e}")
         return result

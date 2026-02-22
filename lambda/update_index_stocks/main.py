@@ -7,26 +7,27 @@ from google import genai
 from google.genai import types
 
 # Initialize AWS clients
-dynamodb = boto3.resource('dynamodb')
-secrets_client = boto3.client('secretsmanager')
+dynamodb = boto3.resource("dynamodb")
+secrets_client = boto3.client("secretsmanager")
 
 # Environment variables
-index_stocks_table_name = os.environ['DYNAMODB_INDEX_STOCKS_TABLE_NAME']
-stats_table_name = os.environ['DYNAMODB_STATS_TABLE_NAME']
-gemini_secret_name = os.environ.get('GEMINI_API_KEY_SECRET_NAME')
+index_stocks_table_name = os.environ["DYNAMODB_INDEX_STOCKS_TABLE_NAME"]
+stats_table_name = os.environ["DYNAMODB_STATS_TABLE_NAME"]
+gemini_secret_name = os.environ.get("GEMINI_API_KEY_SECRET_NAME")
 
-index_stocks_table = dynamodb.Table(index_stocks_table_name) # type: ignore
-stats_table = dynamodb.Table(stats_table_name) # type: ignore
+index_stocks_table = dynamodb.Table(index_stocks_table_name)  # type: ignore
+stats_table = dynamodb.Table(stats_table_name)  # type: ignore
 
 # Initialize Gemini client (lazy loading)
 _gemini_client = None
+
 
 def get_gemini_client():
     global _gemini_client
     if _gemini_client is None and gemini_secret_name:
         try:
             secret_response = secrets_client.get_secret_value(SecretId=gemini_secret_name)
-            api_key = secret_response['SecretString']
+            api_key = secret_response["SecretString"]
             _gemini_client = genai.Client(api_key=api_key)
         except Exception as e:
             print(f"Failed to initialize Gemini client: {str(e)}")
@@ -37,38 +38,37 @@ def get_taiwan_indexes_from_stats():
     """
     Get Taiwan stock indexes from stats table
     Extracts all index names that end with "類" and are not "其他類"
-    
+
     Returns:
         List of index names
     """
     try:
         # Scan to get all dates
-        response = stats_table.scan(
-            ProjectionExpression='RSI'
-        )
-        
-        items = response.get('Items', [])
-        
+        response = stats_table.scan(ProjectionExpression="RSI")
+
+        items = response.get("Items", [])
+
         if not items:
             print("No stats data found in DynamoDB")
             return []
-        
+
         # Extract all unique index names from RSI data
         index_names = set()
         for item in items:
-            rsi_data = item.get('RSI', {})
+            rsi_data = item.get("RSI", {})
             for index_name in rsi_data.keys():
                 # Only include indexes ending with "類" but skip "其他類"
-                if index_name.endswith('類') and index_name != '其他類':
+                if index_name.endswith("類") and index_name != "其他類":
                     index_names.add(index_name)
-        
+
         taiwan_indexes = sorted(list(index_names))
         print(f"Found {len(taiwan_indexes)} Taiwan stock indexes: {taiwan_indexes}")
         return taiwan_indexes
-        
+
     except Exception as e:
         print(f"Error getting Taiwan indexes from stats table: {str(e)}")
         import traceback
+
         traceback.print_exc()
         return []
 
@@ -76,26 +76,26 @@ def get_taiwan_indexes_from_stats():
 def find_representative_stocks_batch(client, index_names):
     """
     Use AI to find representative stocks for multiple indexes in one request
-    
+
     Args:
         client: Gemini AI client
         index_names: List of index names (e.g., ["金融類", "半導體類", ...])
-    
+
     Returns:
         Dict mapping index_name to list of stock dicts
     """
     if not client:
         print("AI client not available for finding stocks")
         return {}
-    
+
     if not index_names:
         print("No index names provided")
         return {}
-    
+
     try:
         # Format index names as a numbered list for the prompt
-        index_list = "\n".join([f"{i+1}. {name}" for i, name in enumerate(index_names)])
-        
+        index_list = "\n".join([f"{i + 1}. {name}" for i, name in enumerate(index_names)])
+
         prompt = f"""請根據「台灣證券交易所」(TWSE) 的產業分類資料，找出以下類股指數中最具代表性的前 5 家上市公司。
 
 這些類股指數是由台灣證券交易所建立的產業分類，請確保回傳的股票確實屬於該類股指數的成分股。
@@ -132,34 +132,32 @@ def find_representative_stocks_batch(client, index_names):
 """
 
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model="gemini-2.5-flash",
             contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.1,
-                response_mime_type='application/json'
-            )
+            config=types.GenerateContentConfig(temperature=0.1, response_mime_type="application/json"),
         )
-        
+
         # Print token usage
-        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
             usage = response.usage_metadata
             print(f"Token usage - Input: {usage.prompt_token_count}, Output: {usage.candidates_token_count}, Total: {usage.total_token_count}")
-        
+
         response_text = response.text.strip()
-        
-        if response_text.startswith('```'):
-            response_text = response_text.split('\n', 1)[1]
-            response_text = response_text.rsplit('```', 1)[0]
-        
+
+        if response_text.startswith("```"):
+            response_text = response_text.split("\n", 1)[1]
+            response_text = response_text.rsplit("```", 1)[0]
+
         result = json.loads(response_text)
-        index_stocks = result.get('index_stocks', {})
-        
+        index_stocks = result.get("index_stocks", {})
+
         print(f"Found stocks for {len(index_stocks)} indexes in single request")
         return index_stocks
-        
+
     except Exception as e:
         print(f"Error finding representative stocks in batch: {str(e)}")
         import traceback
+
         traceback.print_exc()
         return {}
 
@@ -173,55 +171,43 @@ def update_index_stocks():
     """
     # Get Taiwan stock indexes from stats table
     taiwan_indexes = get_taiwan_indexes_from_stats()
-    
+
     if not taiwan_indexes:
         print("No Taiwan stock indexes found")
-        return {
-            'updated': 0,
-            'failed': 0,
-            'indexes': []
-        }
-    
+        return {"updated": 0, "failed": 0, "indexes": []}
+
     client = get_gemini_client()
     if not client:
         print("Failed to initialize Gemini client, cannot update stocks")
-        return {
-            'updated': 0,
-            'failed': len(taiwan_indexes),
-            'indexes': []
-        }
-    
+        return {"updated": 0, "failed": len(taiwan_indexes), "indexes": []}
+
     updated_count = 0
     failed_count = 0
     updated_indexes = []
-    
+
     try:
         print(f"Processing all {len(taiwan_indexes)} indexes in a single AI request...")
-        
+
         # Get all stocks in one AI request
         index_stocks_dict = find_representative_stocks_batch(client, taiwan_indexes)
-        
+
         if not index_stocks_dict:
             print("Failed to get stocks from AI")
-            return {
-                'updated': 0,
-                'failed': len(taiwan_indexes),
-                'indexes': []
-            }
-        
+            return {"updated": 0, "failed": len(taiwan_indexes), "indexes": []}
+
         # Store each index's stocks in DynamoDB
         for index_name in taiwan_indexes:
             try:
                 stocks = index_stocks_dict.get(index_name, [])
-                
+
                 if stocks and isinstance(stocks, list) and len(stocks) > 0:
                     # Store in DynamoDB
                     index_stocks_table.put_item(
                         Item={
-                            'index_name': index_name,
-                            'stocks': stocks,
-                            'updated_at': datetime.now().isoformat(),
-                            'updated_timestamp': int(datetime.now().timestamp())
+                            "index_name": index_name,
+                            "stocks": stocks,
+                            "updated_at": datetime.now().isoformat(),
+                            "updated_timestamp": int(datetime.now().timestamp()),
                         }
                     )
                     updated_count += 1
@@ -230,28 +216,22 @@ def update_index_stocks():
                 else:
                     failed_count += 1
                     print(f"No stocks returned for {index_name}")
-                    
+
             except Exception as e:
                 failed_count += 1
                 print(f"Error storing stocks for {index_name}: {str(e)}")
                 import traceback
+
                 traceback.print_exc()
-        
-        return {
-            'updated': updated_count,
-            'failed': failed_count,
-            'indexes': updated_indexes
-        }
-        
+
+        return {"updated": updated_count, "failed": failed_count, "indexes": updated_indexes}
+
     except Exception as e:
         print(f"Error in update_index_stocks: {str(e)}")
         import traceback
+
         traceback.print_exc()
-        return {
-            'updated': 0,
-            'failed': len(taiwan_indexes),
-            'indexes': []
-        }
+        return {"updated": 0, "failed": len(taiwan_indexes), "indexes": []}
 
 
 def handler(event, context):
@@ -261,32 +241,21 @@ def handler(event, context):
     """
     try:
         print(f"Starting index stocks update at {datetime.now()}")
-        
+
         result = update_index_stocks()
-        
+
         print(f"Update completed: {result['updated']} updated, {result['failed']} failed")
-        
-        return {
-            'statusCode': 200,
-            'body': json.dumps({
-                'message': 'Index stocks update completed',
-                'result': result
-            })
-        }
-        
+
+        return {"statusCode": 200, "body": json.dumps({"message": "Index stocks update completed", "result": result})}
+
     except Exception as e:
         print(f"Error: {str(e)}")
         import traceback
+
         traceback.print_exc()
-        return {
-            'statusCode': 500,
-            'body': json.dumps({
-                'message': 'Error updating index stocks',
-                'error': str(e)
-            })
-        }
+        return {"statusCode": 500, "body": json.dumps({"message": "Error updating index stocks", "error": str(e)})}
 
 
 if __name__ == "__main__":
     result = handler({}, None)
-    print(json.dumps(json.loads(result['body']), indent=2, ensure_ascii=False))
+    print(json.dumps(json.loads(result["body"]), indent=2, ensure_ascii=False))

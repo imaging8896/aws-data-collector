@@ -2,7 +2,6 @@ from parser import NewsHTMLParser
 
 
 class GeneralNewsHTMLParser(NewsHTMLParser):
-
     def __init__(self, *, convert_charrefs: bool = True) -> None:
         super().__init__(convert_charrefs=convert_charrefs)
 

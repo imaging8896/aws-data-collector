@@ -2,11 +2,14 @@
 # https://docs.astral.sh/ruff/configuration/
 
 target-version = "py313"
-line-length = 120
+line-length = 160
 
 [lint]
 select = [
     "E",  # pycodestyle errors
     "F",  # Pyflakes
     "I",  # isort
+]
+ignore = [
+    "F841",  # Local variable assigned but never used (allow for future use)
 ]
