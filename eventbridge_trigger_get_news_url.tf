@@ -18,7 +18,7 @@ resource "aws_cloudwatch_event_target" "finance_news_target" {
   rule      = aws_cloudwatch_event_rule.hourly_news_trigger.name
   target_id = "FinanceNewsCollector"
   arn       = aws_lambda_function.data_collector.arn
-  
+
   input = jsonencode({
     category_id = "CAAqJQgKIh9DQkFTRVFvSUwyMHZNREpmTjNRU0JYcG9MVlJYS0FBUAE"
   })
@@ -29,7 +29,7 @@ resource "aws_cloudwatch_event_target" "business_news_target" {
   rule      = aws_cloudwatch_event_rule.hourly_news_trigger.name
   target_id = "BusinessNewsCollector"
   arn       = aws_lambda_function.data_collector.arn
-  
+
   input = jsonencode({
     category_id = "CAAqKggKIiRDQkFTRlFvSUwyMHZNRGx6TVdZU0JYcG9MVlJYR2dKVVZ5Z0FQAQ"
   })

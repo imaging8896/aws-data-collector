@@ -41,12 +41,12 @@ resource "aws_lambda_layer_version" "update_index_stocks_dependencies_layer" {
 resource "aws_lambda_function" "update_index_stocks" {
   filename         = data.archive_file.lambda_update_index_stocks_zip.output_path
   function_name    = "${var.environment}-${var.project_name}-update-index-stocks"
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "main.handler"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "main.handler"
   source_code_hash = data.archive_file.lambda_update_index_stocks_zip.output_base64sha256
-  runtime         = var.lambda_runtime
-  memory_size     = 256
-  timeout         = 300  # 5 minutes to process all indexes
+  runtime          = var.lambda_runtime
+  memory_size      = 256
+  timeout          = 300 # 5 minutes to process all indexes
   architectures    = ["arm64"]
   layers           = [aws_lambda_layer_version.update_index_stocks_dependencies_layer.arn]
 
@@ -82,7 +82,7 @@ resource "aws_cloudwatch_log_group" "lambda_update_index_stocks_logs" {
 resource "aws_cloudwatch_event_rule" "update_index_stocks_schedule" {
   name                = "${var.environment}-${var.project_name}-update-index-stocks-schedule"
   description         = "Update representative stocks for indexes monthly on the 1st"
-  schedule_expression = "cron(0 0 1 * ? *)"  # 1st day of month at 00:00 UTC (8:00 AM Taiwan)
+  schedule_expression = "cron(0 0 1 * ? *)" # 1st day of month at 00:00 UTC (8:00 AM Taiwan)
 
   tags = {
     Project     = var.project_name

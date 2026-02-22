@@ -16,12 +16,6 @@ variable "lambda_runtime" {
   default     = "python3.13"
 }
 
-variable "lambda_memory_size" {
-  description = "Lambda function memory size in MB"
-  type        = number
-  default     = 128 # Minimum for cost optimization
-}
-
 variable "lambda_timeout" {
   description = "Lambda function timeout in seconds"
   type        = number

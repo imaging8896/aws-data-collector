@@ -32,11 +32,11 @@ resource "terraform_data" "install_dependencies" {
 }
 
 resource "aws_lambda_layer_version" "dependencies_layer" {
-  filename               = "${path.module}/lambda_layer.zip"
-  layer_name             = "${var.environment}-${var.project_name}-dependencies"
-  compatible_runtimes    = [var.lambda_runtime]
+  filename                 = "${path.module}/lambda_layer.zip"
+  layer_name               = "${var.environment}-${var.project_name}-dependencies"
+  compatible_runtimes      = [var.lambda_runtime]
   compatible_architectures = ["arm64"]
-  source_code_hash       = terraform_data.install_dependencies.id
+  source_code_hash         = terraform_data.install_dependencies.id
 
   depends_on = [terraform_data.install_dependencies]
 }
@@ -45,12 +45,12 @@ resource "aws_lambda_layer_version" "dependencies_layer" {
 resource "aws_lambda_function" "data_collector" {
   filename         = data.archive_file.lambda_zip.output_path
   function_name    = "${var.environment}-${var.project_name}-collector"
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "main.handler"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "main.handler"
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
-  runtime         = var.lambda_runtime
-  memory_size     = 192
-  timeout         = var.lambda_timeout
+  runtime          = var.lambda_runtime
+  memory_size      = 192
+  timeout          = var.lambda_timeout
   architectures    = ["arm64"]
   layers           = [aws_lambda_layer_version.dependencies_layer.arn]
 

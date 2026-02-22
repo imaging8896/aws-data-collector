@@ -79,7 +79,7 @@ resource "aws_s3_bucket_cors_configuration" "trend_charts" {
   cors_rule {
     allowed_headers = ["*"]
     allowed_methods = ["GET", "HEAD"]
-    allowed_origins = ["*"]  # Restrict this to your domain in production
+    allowed_origins = ["*"] # Restrict this to your domain in production
     expose_headers  = ["ETag"]
     max_age_seconds = 3000
   }

@@ -55,7 +55,7 @@ resource "aws_cloudwatch_log_group" "lambda_fetch_index_stocks_data_logs" {
 resource "aws_cloudwatch_event_rule" "fetch_index_stocks_data_schedule" {
   name                = "${var.environment}-${var.project_name}-fetch-index-stocks-data-schedule"
   description         = "Trigger index stocks data fetch daily at 16:05 Taiwan time"
-  schedule_expression = "cron(5 8 * * ? *)"  # 08:05 UTC = 16:05 Taiwan (UTC+8)
+  schedule_expression = "cron(5 8 * * ? *)" # 08:05 UTC = 16:05 Taiwan (UTC+8)
 
   tags = {
     Project     = var.project_name
@@ -71,7 +71,7 @@ resource "aws_cloudwatch_event_target" "fetch_index_stocks_data_target" {
   arn       = aws_lambda_function.fetch_index_stocks_data.arn
 
   input = jsonencode({
-    from_days = 30  # Fetch 30 days of data for RSI calculation
+    from_days = 30 # Fetch 30 days of data for RSI calculation
   })
 }
 

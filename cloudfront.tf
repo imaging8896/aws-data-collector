@@ -15,7 +15,7 @@ resource "aws_cloudfront_distribution" "trend_charts_cdn" {
   is_ipv6_enabled     = true
   comment             = "CDN for ${var.environment} ${var.project_name} trend charts"
   default_root_object = "index.html"
-  price_class         = "PriceClass_100"  # Use only North America and Europe (cheapest)
+  price_class         = "PriceClass_100" # Use only North America and Europe (cheapest)
 
   origin {
     domain_name              = aws_s3_bucket.trend_charts.bucket_regional_domain_name
@@ -37,8 +37,8 @@ resource "aws_cloudfront_distribution" "trend_charts_cdn" {
 
     viewer_protocol_policy = "redirect-to-https"
     min_ttl                = 0
-    default_ttl            = 3600    # 1 hour
-    max_ttl                = 86400   # 24 hours
+    default_ttl            = 3600  # 1 hour
+    max_ttl                = 86400 # 24 hours
     compress               = true
   }
 
@@ -58,8 +58,8 @@ resource "aws_cloudfront_distribution" "trend_charts_cdn" {
 
     viewer_protocol_policy = "redirect-to-https"
     min_ttl                = 0
-    default_ttl            = 300     # 5 minutes for HTML
-    max_ttl                = 3600    # 1 hour
+    default_ttl            = 300  # 5 minutes for HTML
+    max_ttl                = 3600 # 1 hour
     compress               = true
   }
 
@@ -79,8 +79,8 @@ resource "aws_cloudfront_distribution" "trend_charts_cdn" {
 
     viewer_protocol_policy = "redirect-to-https"
     min_ttl                = 0
-    default_ttl            = 300     # 5 minutes for index.html (always show latest)
-    max_ttl                = 600     # 10 minutes max
+    default_ttl            = 300 # 5 minutes for index.html (always show latest)
+    max_ttl                = 600 # 10 minutes max
     compress               = true
   }
 
@@ -100,9 +100,9 @@ resource "aws_cloudfront_distribution" "trend_charts_cdn" {
 
     viewer_protocol_policy = "redirect-to-https"
     min_ttl                = 0
-    default_ttl            = 2592000   # 30 days for timestamped images (immutable)
-    max_ttl                = 31536000  # 1 year
-    compress               = false     # PNG already compressed
+    default_ttl            = 2592000  # 30 days for timestamped images (immutable)
+    max_ttl                = 31536000 # 1 year
+    compress               = false    # PNG already compressed
   }
 
   restrictions {

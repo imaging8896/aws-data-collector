@@ -41,21 +41,21 @@ resource "aws_lambda_layer_version" "fetch_market_data_dependencies_layer" {
 resource "aws_lambda_function" "fetch_market_data" {
   filename         = data.archive_file.lambda_fetch_market_data_zip.output_path
   function_name    = "${var.environment}-${var.project_name}-fetch-market-data"
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "main.handler"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "main.handler"
   source_code_hash = data.archive_file.lambda_fetch_market_data_zip.output_base64sha256
-  runtime         = var.lambda_runtime
-  memory_size     = 128
-  timeout         = 60
-  architectures   = ["arm64"]
-  layers          = [aws_lambda_layer_version.fetch_market_data_dependencies_layer.arn]
+  runtime          = var.lambda_runtime
+  memory_size      = 128
+  timeout          = 60
+  architectures    = ["arm64"]
+  layers           = [aws_lambda_layer_version.fetch_market_data_dependencies_layer.arn]
 
   environment {
     variables = {
-      MARKET_DATA_TABLE_NAME = aws_dynamodb_table.market_data_table.name
+      MARKET_DATA_TABLE_NAME   = aws_dynamodb_table.market_data_table.name
       INVESTOR_DATA_TABLE_NAME = aws_dynamodb_table.investor_data_table.name
-      INDEX_DATA_TABLE_NAME = aws_dynamodb_table.index_data_table.name
-      ENVIRONMENT         = var.environment
+      INDEX_DATA_TABLE_NAME    = aws_dynamodb_table.index_data_table.name
+      ENVIRONMENT              = var.environment
     }
   }
 
@@ -82,7 +82,7 @@ resource "aws_cloudwatch_log_group" "lambda_fetch_market_data_logs" {
 resource "aws_cloudwatch_event_rule" "fetch_market_data_schedule" {
   name                = "${var.environment}-${var.project_name}-fetch-market-data-schedule"
   description         = "Trigger market data fetch daily at 16:00 Taiwan time"
-  schedule_expression = "cron(0 8 * * ? *)"  # 08:00 UTC = 16:00 Taiwan (UTC+8)
+  schedule_expression = "cron(0 8 * * ? *)" # 08:00 UTC = 16:00 Taiwan (UTC+8)
 
   tags = {
     Project     = var.project_name
@@ -98,7 +98,7 @@ resource "aws_cloudwatch_event_target" "fetch_trades_target" {
   arn       = aws_lambda_function.fetch_market_data.arn
 
   input = jsonencode({
-    data_type = "trades",
+    data_type   = "trades",
     index_names = ["tw_index", "2330"],
     from_days   = 7,
   })
@@ -138,7 +138,7 @@ resource "aws_lambda_permission" "allow_eventbridge_fetch_market_data" {
 resource "aws_cloudwatch_event_rule" "fetch_investor_data_schedule" {
   name                = "${var.environment}-${var.project_name}-fetch-investor-data-schedule"
   description         = "Trigger investor data fetch daily at 19:00 Taiwan time"
-  schedule_expression = "cron(0 11 * * ? *)"  # 11:00 UTC = 19:00 Taiwan (UTC+8)
+  schedule_expression = "cron(0 11 * * ? *)" # 11:00 UTC = 19:00 Taiwan (UTC+8)
 
   tags = {
     Project     = var.project_name
