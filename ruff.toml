@@ -10,6 +10,3 @@ select = [
     "F",  # Pyflakes
     "I",  # isort
 ]
-ignore = [
-    "F841",  # Local variable assigned but never used (allow for future use)
-]

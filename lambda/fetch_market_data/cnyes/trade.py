@@ -45,7 +45,6 @@ def get_trades(indexes: list[Index], from_dt: datetime, to_dt: datetime):
     if from_dt.year <= 2021 or to_dt.year <= 2021:
         if len(indexes) > 1:
             raise Exception("CNYES API does not support multiple symbols for history endpoint")
-        request_index = indexes[0]
         url = f"https://ws.api.cnyes.com/ws/api/v1/charting/history?resolution=D&symbol={symbols}&from={int(to_dt.timestamp())}&to={int(from_dt.timestamp())}&quote=1"
     response = requests.get(url, impersonate="chrome")
 
@@ -109,10 +108,7 @@ def _get_data(index_data, all_data):
     if len(turnovers) != len(data_dates):
         raise Exception(f"Data length mismatch: dates({len(data_dates)}) vs turnover({len(turnovers)})\n{all_data}")
 
-    # 'vwap' are also available but not used here
-    percent = Decimal(str(index_data["quote"]["220064"])) if index_data["quote"]["220064"] is not None else None
-    avg = Decimal(str(index_data["quote"]["3404"])) if index_data["quote"]["3404"] is not None else None
-    diff = Decimal(str(index_data["quote"]["11"])) if index_data["quote"]["11"] is not None else None
+    # Note: 'vwap', 'percent' (220064), 'avg' (3404), 'diff' (11) are also available in quote but not used here
     name = index_data["quote"]["200009"]
 
     return {

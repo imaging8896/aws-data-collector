@@ -227,8 +227,6 @@ def generate_analysis_prompt(title, content):
     """
     Generate analysis prompt for a news article
     """
-    categories_str = ", ".join(categories)
-
     return f"""
 你是一位專業的經濟新聞分析師,專門分析新聞的內容對市場和產業的影響。
 請以此新聞內容為唯一依據，進行以下分析:

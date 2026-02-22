@@ -89,7 +89,6 @@ def send_discord_notification(index_name, signals, stock_symbols, timestamp):
             has_latest_data = stock.get("has_latest_data", False)
             has_signal = stock.get("has_signal", False)
             buy_signal = stock.get("buy_signal", False)
-            sell_signal = stock.get("sell_signal", False)
             rsi_5 = stock.get("rsi_5")
             daily_gain_pct = stock.get("daily_gain_pct")
 
