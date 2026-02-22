@@ -2,7 +2,6 @@ import json
 import os
 from datetime import datetime, timedelta, date
 from decimal import Decimal
-from collections import defaultdict
 import boto3
 from strategy.medium import check_medium_strategy
 from strategy.short import check_short_strategy
@@ -10,13 +9,11 @@ from strategy.short import check_short_strategy
 # Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')
 
-news_table_name = os.environ['DYNAMODB_TABLE_NAME']
 stats_table_name = os.environ['DYNAMODB_STATS_TABLE_NAME']
 index_data_table_name = os.environ['DYNAMODB_INDEX_TABLE_NAME']
 index_stocks_table_name = os.environ.get('DYNAMODB_INDEX_STOCKS_TABLE_NAME', '')
 market_data_table_name = os.environ.get('DYNAMODB_MARKET_DATA_TABLE_NAME', '')
 
-news_table = dynamodb.Table(news_table_name) # type: ignore
 stats_table = dynamodb.Table(stats_table_name) # type: ignore
 index_data_table = dynamodb.Table(index_data_table_name) # type: ignore
 index_stocks_table = dynamodb.Table(index_stocks_table_name) if index_stocks_table_name else None # type: ignore
@@ -506,12 +503,12 @@ def get_stock_rsi_for_date(date_str):
 
 def handler(event, context):
     """
-    Aggregate daily statistics from news data
+    Aggregate daily statistics (RSI for indexes and stocks)
     Runs hourly to update current day statistics
     
     Expected event format:
     {
-        "days": 2  # Number of days to aggregate (default: 2)
+        "days": 2  # Number of days to process (default: 2)
     }
     """
     try:
@@ -520,49 +517,27 @@ def handler(event, context):
         # Calculate date range
         today = datetime.now()
         end_date = datetime(year=today.year, month=today.month, day=today.day)
-        start_date = end_date - timedelta(days=days)
-        start_timestamp = int(start_date.timestamp()) - 1
         
-        # Fetch news data with analysis
-        response = news_table.scan(
-            FilterExpression='#pt > :start_ts AND attribute_exists(analysis)',
-            ExpressionAttributeNames={'#pt': 'publish_time'},
-            ExpressionAttributeValues={':start_ts': start_timestamp}
-        )
-        
-        items = response.get('Items', [])
-        
-        # Handle pagination
-        while 'LastEvaluatedKey' in response:
-            response = news_table.scan(
-                FilterExpression='#pt > :start_ts AND attribute_exists(analysis)',
-                ExpressionAttributeNames={'#pt': 'publish_time'},
-                ExpressionAttributeValues={':start_ts': start_timestamp},
-                ExclusiveStartKey=response['LastEvaluatedKey']
-            )
-            items.extend(response.get('Items', []))
-        
-        print(f"Found {len(items)} news items with analysis")
-        
-        # Aggregate data by date
-        daily_stats = aggregate_by_date(items)
-        
-        # Save to DynamoDB
+        # Process each day
         saved_count = 0
         latest_date = None
-        for date, stats in daily_stats.items():
-            save_daily_stats(date, stats)
+        
+        for day_offset in range(days):
+            target_date = end_date - timedelta(days=day_offset)
+            date_str = target_date.strftime('%Y-%m-%d')
+            
+            save_daily_stats(date_str)
             saved_count += 1
-            if latest_date is None or date > latest_date:
-                latest_date = date
+            
+            if latest_date is None or date_str > latest_date:
+                latest_date = date_str
         
         return {
             'statusCode': 200,
             'body': json.dumps({
                 'message': 'Daily statistics aggregated successfully',
                 'days_processed': saved_count,
-                'total_news': len(items),
-                'date': latest_date  # Pass the latest date to chart generator
+                'date': latest_date
             }, default=decimal_default)
         }
         
@@ -579,83 +554,25 @@ def handler(event, context):
         }
 
 
-def aggregate_by_date(items):
-    """
-    Aggregate news items into daily statistics
-    """
-    daily_stats = defaultdict(lambda: {
-        'date': '',
-        'total_news': 0,
-        'stocks': defaultdict(lambda: {'name': '', 'mentions': 0, 'sentiment': 0, 'events': []})
-    })
-    
-    for item in items:
-        publish_time = int(item['publish_time'])
-        date = datetime.fromtimestamp(publish_time).strftime('%Y-%m-%d')
-        analysis = item.get('analysis', {})
-        
-        if not analysis:
-            continue
-        
-        daily_stats[date]['date'] = date
-        daily_stats[date]['total_news'] += 1
-        
-        # Stock Opportunities
-        for entity in analysis.get('entities_mentioned', []):
-            stock_id = entity['id']
-            stock_name = entity['name']
-            sentiment_score = float(entity['sentiment_score'])
-            event = entity['event']
-            
-            if stock_id:
-                key = stock_id
-                if "." in key:
-                    key = key.split(".")[0]
-                if "-" in key:
-                    key = key.split("-")[0]
-                daily_stats[date]['stocks'][key]['name'] = stock_name
-                daily_stats[date]['stocks'][key]['mentions'] += 1
-                daily_stats[date]['stocks'][key]['sentiment'] += sentiment_score
-                if event:
-                    daily_stats[date]['stocks'][key]['events'].append(event)
-    
-    return daily_stats
-
-
-def save_daily_stats(date, stats):
+def save_daily_stats(date_str):
     """
     Save daily statistics to DynamoDB
     """
     try:
-        # Convert stocks data
-        stocks = {
-            data['name'] if key.lower() in {"null", "n/a"} or not key else key: {
-                'name': data['name'],
-                'mentions': Decimal(str(data['mentions'])),
-                'average_sentiment': Decimal(str(round(data['sentiment'] / data['mentions'], 4))) if data['mentions'] > 0 else Decimal('0'),
-                'events': data['events'][:10]  # Keep top 10 events
-            }
-            for key, data in stats['stocks'].items()
-        }
-
-        # Put item to DynamoDB
         # Check if record exists
-        existing = stats_table.get_item(Key={'date': date})
+        existing = stats_table.get_item(Key={'date': date_str})
         
         # Calculate RSI for all indexes
-        rsi_data = get_index_rsi_for_date(date)
+        rsi_data = get_index_rsi_for_date(date_str)
         
         # Calculate RSI for all index stocks
-        rsi_stock_data = get_stock_rsi_for_date(date)
+        rsi_stock_data = get_stock_rsi_for_date(date_str)
         
         if 'Item' in existing:
             # Update existing record with RSI and RSI_stock
-            update_expr = 'SET updated_at = :updated_at, total_news = :total_news, ' \
-                         'stocks = :stocks'
+            update_expr = 'SET updated_at = :updated_at'
             attr_values = {
-                ':updated_at': int(datetime.now().timestamp()),
-                ':total_news': Decimal(str(stats['total_news'])),
-                ':stocks': stocks
+                ':updated_at': int(datetime.now().timestamp())
             }
             
             if rsi_data:
@@ -667,17 +584,15 @@ def save_daily_stats(date, stats):
                 attr_values[':rsi_stock'] = rsi_stock_data
             
             stats_table.update_item(
-                Key={'date': date},
+                Key={'date': date_str},
                 UpdateExpression=update_expr,
                 ExpressionAttributeValues=attr_values
             )
         else:
             # Create new record with RSI and RSI_stock
             item = {
-                'date': date,
-                'updated_at': int(datetime.now().timestamp()),
-                'total_news': Decimal(str(stats['total_news'])),
-                'stocks': stocks
+                'date': date_str,
+                'updated_at': int(datetime.now().timestamp())
             }
             
             if rsi_data:
@@ -689,10 +604,10 @@ def save_daily_stats(date, stats):
             stats_table.put_item(Item=item)
         
         stock_count = sum(len(stocks) for stocks in rsi_stock_data.values()) if rsi_stock_data else 0
-        print(f"Saved statistics for {date}: {stats['total_news']} news items with RSI for {len(rsi_data)} indexes and {stock_count} stocks")
+        print(f"Saved statistics for {date_str}: RSI for {len(rsi_data)} indexes and {stock_count} stocks")
   
     except Exception as e:
-        print(f"Error saving stats for {date}: {str(e)}")
+        print(f"Error saving stats for {date_str}: {str(e)}")
         import traceback
         traceback.print_exc()
 

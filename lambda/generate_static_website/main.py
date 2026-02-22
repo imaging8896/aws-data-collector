@@ -197,9 +197,7 @@ def generate_html(request_date, start_date, end_date, days, chart_urls, rsi_data
     Generate HTML page to display the investment analysis charts and RSI signals
     """
     # Chart titles mapping
-    chart_titles = [
-        "🎯 個股投資機會"
-    ]
+    chart_titles = []
     
     # Build chart sections
     chart_sections = ""

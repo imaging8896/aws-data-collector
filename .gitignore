@@ -51,17 +51,8 @@ lambda_dispatcher_function.zip
 lambda_batch_processor_function.zip
 lambda_batch_processor_layer.zip
 layer_batch_processor/
-lambda_chart_generator_function.zip
-lambda_chart_generator_layer.zip
-layer_chart_generator/
-lambda_numpy_layer.zip
-layer_numpy/
-lambda_matplotlib_layer.zip
-layer_matplotlib/
 lambda_static_website_function.zip
 lambda_aggregate_stats_function.zip
-lambda_aggregate_stats_layer.zip
-layer_aggregate_stats/
 lambda_fetch_market_data_function.zip
 lambda_fetch_market_data_layer.zip
 layer_fetch_market_data/

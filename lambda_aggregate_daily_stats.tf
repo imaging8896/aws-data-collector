@@ -8,36 +8,6 @@ data "archive_file" "lambda_aggregate_stats_zip" {
   excludes    = ["requirements.txt", "__pycache__"]
 }
 
-# Create Lambda Layer with google-genai dependency
-resource "terraform_data" "install_aggregate_stats_dependencies" {
-  triggers_replace = {
-    # Trigger rebuild when we add dependencies
-    version = "1"
-  }
-
-  provisioner "local-exec" {
-    command = <<EOT
-      rm -rf ${path.module}/layer_aggregate_stats || true
-      mkdir -p ${path.module}/layer_aggregate_stats/python
-      docker run --rm --platform linux/arm64 --entrypoint "" \
-        -v "$(pwd)/${path.module}/layer_aggregate_stats/python:/var/task" \
-        public.ecr.aws/lambda/python:${replace(var.lambda_runtime, "python", "")} \
-        pip install google-genai -t /var/task --upgrade
-      cd ${path.module}/layer_aggregate_stats && zip -r ../lambda_aggregate_stats_layer.zip python
-    EOT
-  }
-}
-
-resource "aws_lambda_layer_version" "aggregate_stats_dependencies_layer" {
-  filename                 = "${path.module}/lambda_aggregate_stats_layer.zip"
-  layer_name               = "${var.environment}-${var.project_name}-aggregate-stats-dependencies"
-  compatible_runtimes      = [var.lambda_runtime]
-  compatible_architectures = ["arm64"]
-  source_code_hash         = terraform_data.install_aggregate_stats_dependencies.id
-
-  depends_on = [terraform_data.install_aggregate_stats_dependencies]
-}
-
 # Lambda Function
 resource "aws_lambda_function" "aggregate_stats" {
   filename         = data.archive_file.lambda_aggregate_stats_zip.output_path
@@ -47,18 +17,15 @@ resource "aws_lambda_function" "aggregate_stats" {
   source_code_hash = data.archive_file.lambda_aggregate_stats_zip.output_base64sha256
   runtime         = var.lambda_runtime
   memory_size     = 256
-  timeout         = 300
+  timeout         = 120
   architectures    = ["arm64"]
-  layers           = [aws_lambda_layer_version.aggregate_stats_dependencies_layer.arn]
 
   environment {
     variables = {
-      DYNAMODB_TABLE_NAME              = aws_dynamodb_table.news_urls_table.name
       DYNAMODB_STATS_TABLE_NAME        = aws_dynamodb_table.daily_stats_table.name
       DYNAMODB_INDEX_TABLE_NAME        = aws_dynamodb_table.index_data_table.name
       DYNAMODB_INDEX_STOCKS_TABLE_NAME = aws_dynamodb_table.index_stocks_table.name
       DYNAMODB_MARKET_DATA_TABLE_NAME  = aws_dynamodb_table.market_data_table.name
-      GEMINI_API_KEY_SECRET_NAME       = aws_secretsmanager_secret.gemini_api_key.name
       ENVIRONMENT                      = var.environment
     }
   }
@@ -115,7 +82,7 @@ resource "aws_lambda_permission" "allow_eventbridge_aggregate_stats" {
   source_arn    = aws_cloudwatch_event_rule.aggregate_stats_schedule.arn
 }
 
-# Lambda Destination: Trigger chart generator on success
+# Lambda Destination: Trigger static website generator on success
 resource "aws_lambda_function_event_invoke_config" "aggregate_stats_destination" {
   function_name = aws_lambda_function.aggregate_stats.function_name
   
@@ -124,16 +91,16 @@ resource "aws_lambda_function_event_invoke_config" "aggregate_stats_destination"
 
   destination_config {
     on_success {
-      destination = aws_lambda_function.chart_generator.arn
+      destination = aws_lambda_function.static_website_generator.arn
     }
   }
 }
 
-# Permission for aggregate_stats to invoke chart_generator
-resource "aws_lambda_permission" "aggregate_stats_invoke_chart_generator" {
+# Permission for aggregate_stats to invoke static_website_generator
+resource "aws_lambda_permission" "aggregate_stats_invoke_static_website" {
   statement_id  = "AllowExecutionFromAggregateStats"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.chart_generator.function_name
+  function_name = aws_lambda_function.static_website_generator.function_name
   principal     = "lambda.amazonaws.com"
   source_arn    = aws_lambda_function.aggregate_stats.arn
 }
