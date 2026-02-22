@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: ["*"]
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   terraform-fmt:
     name: Terraform Format
