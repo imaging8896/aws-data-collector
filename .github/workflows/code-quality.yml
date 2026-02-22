@@ -1,0 +1,34 @@
+name: Code Quality
+
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: ["*"]
+
+jobs:
+  lint:
+    name: Ruff & MyPy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          pip install ruff mypy boto3-stubs
+
+      - name: Run Ruff linter
+        run: ruff check lambda/
+
+      - name: Run Ruff formatter check
+        run: ruff format --check lambda/
+
+      - name: Run MyPy
+        run: mypy
