@@ -83,7 +83,7 @@ def send_discord_notification(index_name, signals, stock_symbols, timestamp):
 
         # Create stock list text with signal info
         stock_lines = []
-        for stock in stock_symbols[:5]:  # Top 5 stocks
+        for stock in stock_symbols:
             symbol = stock.get("symbol", "")
             name = stock.get("name", "")
             has_latest_data = stock.get("has_latest_data", False)
@@ -131,7 +131,7 @@ def send_discord_notification(index_name, signals, stock_symbols, timestamp):
 
         # Add stock field if available
         if stock_list:
-            embed["fields"].append({"name": "📊 代表性股票", "value": stock_list, "inline": False})
+            embed["fields"].append({"name": "📊 有訊號的股票", "value": stock_list, "inline": False})
 
         # Add time field
         embed["fields"].append({"name": "📅 時間", "value": f"<t:{int(timestamp)}:F>", "inline": True})

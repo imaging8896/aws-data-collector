@@ -84,17 +84,7 @@ def check_signals_and_notify(date_str, stats_data):
 
         notifications_sent = []
 
-        # Indexes without representative stocks (broad market indexes)
-        INDEXES_WITHOUT_STOCKS = {"發行量加權股價", "臺灣50"}
-
         for index_name, index_data in rsi_data.items():
-            # Process indexes ending with "類" (but skip "其他類") OR specific broad market indexes
-            is_sector_index = index_name.endswith("類") and index_name != "其他類"
-            is_broad_market_index = index_name in INDEXES_WITHOUT_STOCKS
-
-            if not (is_sector_index or is_broad_market_index):
-                continue
-
             medium_strategy = index_data.get("medium_strategy", {})
             short_strategy = index_data.get("short_strategy", {})
 
@@ -119,48 +109,46 @@ def check_signals_and_notify(date_str, stats_data):
             if has_short_sell:
                 print("  - Short-term SELL signal")
 
-            # Get stock signals from RSI_stock data (empty for broad market indexes)
-            if is_broad_market_index:
-                stocks_with_signals = []
-            else:
-                # Get stock signals from pre-calculated RSI_stock
-                index_stock_signals = rsi_stock_data.get(index_name, {})
+            # Get stock signals from RSI_stock data, only include stocks with buy or sell signals
+            index_stock_signals = rsi_stock_data.get(index_name, {})
 
-                stocks_with_signals = []
-                for stock_symbol, stock_signal in index_stock_signals.items():
-                    stock_name = stock_signal.get("name", "")
-                    has_latest_data = stock_signal.get("has_latest_data", False)
-                    has_signal = stock_signal.get("has_signal", False)
-                    buy_signal = stock_signal.get("buy_signal", False)
-                    sell_signal = stock_signal.get("sell_signal", False)
-                    rsi_5 = stock_signal.get("rsi_5")
-                    daily_gain_pct = stock_signal.get("daily_gain_pct")
+            stocks_with_signals = []
+            for stock_symbol, stock_signal in index_stock_signals.items():
+                stock_name = stock_signal.get("name", "")
+                has_latest_data = stock_signal.get("has_latest_data", False)
+                has_signal = stock_signal.get("has_signal", False)
+                buy_signal = stock_signal.get("buy_signal", False)
+                sell_signal = stock_signal.get("sell_signal", False)
+                rsi_5 = stock_signal.get("rsi_5")
+                daily_gain_pct = stock_signal.get("daily_gain_pct")
 
-                    # Convert Decimal to float if needed
-                    if rsi_5 is not None:
-                        rsi_5 = float(rsi_5)
-                    if daily_gain_pct is not None:
-                        daily_gain_pct = float(daily_gain_pct)
+                if not (buy_signal or sell_signal):
+                    continue
 
-                    stock_info = {
-                        "symbol": stock_symbol,
-                        "name": stock_name,
-                        "has_latest_data": has_latest_data,
-                        "has_signal": has_signal,
-                        "buy_signal": buy_signal,
-                        "sell_signal": sell_signal,
-                        "rsi_5": rsi_5,
-                        "daily_gain_pct": daily_gain_pct,
-                    }
-                    stocks_with_signals.append(stock_info)
+                # Convert Decimal to float if needed
+                if rsi_5 is not None:
+                    rsi_5 = float(rsi_5)
+                if daily_gain_pct is not None:
+                    daily_gain_pct = float(daily_gain_pct)
 
-                    if has_signal:
-                        signal_type = "買入" if buy_signal else "賣出"
-                        print(f"  Stock {stock_symbol} ({stock_name}): {signal_type} signal, RSI5={rsi_5}, 漲跌={daily_gain_pct}%")
-                    elif has_latest_data:
-                        print(f"  Stock {stock_symbol} ({stock_name}): No signal, RSI5={rsi_5}")
-                    else:
-                        print(f"  Stock {stock_symbol} ({stock_name}): No latest data")
+                stock_info = {
+                    "symbol": stock_symbol,
+                    "name": stock_name,
+                    "has_latest_data": has_latest_data,
+                    "has_signal": has_signal,
+                    "buy_signal": buy_signal,
+                    "sell_signal": sell_signal,
+                    "rsi_5": rsi_5,
+                    "daily_gain_pct": daily_gain_pct,
+                }
+                stocks_with_signals.append(stock_info)
+
+                signal_type = "買入" if buy_signal else "賣出"
+                print(f"  Stock {stock_symbol} ({stock_name}): {signal_type} signal, RSI5={rsi_5}, 漲跌={daily_gain_pct}%")
+
+            # Only send notification if index has signal AND there are stocks with signals
+            if not stocks_with_signals:
+                continue
 
             # Collect all signals for this index
             signals = []
