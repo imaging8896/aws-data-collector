@@ -1,3 +1,39 @@
+## Human-Reviewable Code Requirements
+
+生成的程式碼必須容易被人類審閱 (code review)。請遵循以下原則：
+
+### 命名規範 (Naming Conventions)
+
+- 使用有意義且描述性的變數名稱、函式名稱和類別名稱
+- 避免使用單字母變數（除了迴圈計數器如 `i`, `j`）
+- 函式名稱應清楚表達其功能，例如 `calculate_daily_average` 而非 `calc`
+
+### 程式碼結構 (Code Structure)
+
+- 每個函式應只做一件事（Single Responsibility Principle）
+- 函式長度建議不超過 50 行，超過時應考慮拆分
+- 避免深層巢狀（建議最多 3 層縮排）
+- 相關的程式碼應放在一起，並用空行分隔不同邏輯區塊
+
+### 註解與文件 (Comments and Documentation)
+
+- 為複雜的商業邏輯加上註解說明「為什麼」這樣做
+- 使用 docstring 描述函式的用途、參數和回傳值
+- 避免無意義的註解，如 `# increment i by 1`
+
+### 錯誤處理 (Error Handling)
+
+- 使用明確的錯誤訊息，讓 reviewer 容易理解錯誤情境
+- Python：避免空的 except 區塊，應明確指定要捕捉的例外類型
+- Terraform：善用 `validation` 區塊驗證變數輸入，並提供清楚的錯誤訊息
+
+### 程式碼一致性 (Code Consistency)
+
+- 遵循專案既有的程式碼風格
+- 使用一致的縮排和格式（由 Ruff 和 Terraform fmt 自動處理）
+
+---
+
 ## Code Quality Checks
 
 Before committing code, always run the following checks:
