@@ -84,6 +84,9 @@ def check_signals_and_notify(date_str, stats_data):
 
         notifications_sent = []
 
+        # Broad market indexes that have no individual stocks but should still notify
+        INDEXES_WITHOUT_STOCKS = {"發行量加權股價", "臺灣50"}
+
         for index_name, index_data in rsi_data.items():
             medium_strategy = index_data.get("medium_strategy", {})
             short_strategy = index_data.get("short_strategy", {})
@@ -147,7 +150,8 @@ def check_signals_and_notify(date_str, stats_data):
                 print(f"  Stock {stock_symbol} ({stock_name}): {signal_type} signal, RSI5={rsi_5}, 漲跌={daily_gain_pct}%")
 
             # Only send notification if index has signal AND there are stocks with signals
-            if not stocks_with_signals:
+            # Exception: broad market indexes (e.g. 發行量加權股價, 臺灣50) have no individual stocks
+            if not stocks_with_signals and index_name not in INDEXES_WITHOUT_STOCKS:
                 continue
 
             # Collect all signals for this index
