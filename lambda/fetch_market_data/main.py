@@ -234,11 +234,11 @@ def get_stock_group_trade(data_date: date):
 @retry_once
 def get_market_stats(data_date: date):
     """Fetch and store market statistics (上漲/下跌/平盤家數)"""
-    from twse.market_stats import get_market_stats
+    from twse.market_stats import get_market_stats as fetch_market_stats
 
     print(f"Getting market stats data for: {data_date}")
 
-    data = get_market_stats(data_date)
+    data = fetch_market_stats(data_date)
 
     if not data:
         print(f"No market stats data available for {data_date}")

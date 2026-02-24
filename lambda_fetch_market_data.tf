@@ -138,7 +138,7 @@ resource "aws_lambda_permission" "allow_eventbridge_fetch_market_data" {
 # EventBridge rule to trigger daily at 19:00 Taiwan time (11:00 UTC)
 resource "aws_cloudwatch_event_rule" "fetch_investor_data_schedule" {
   name                = "${var.environment}-${var.project_name}-fetch-investor-data-schedule"
-  description         = "Trigger investor data fetch daily at 19:00 Taiwan time"
+  description         = "Trigger market data fetch (investor data, market stats) daily at 19:00 Taiwan time"
   schedule_expression = "cron(0 11 * * ? *)" # 11:00 UTC = 19:00 Taiwan (UTC+8)
 
   tags = {
