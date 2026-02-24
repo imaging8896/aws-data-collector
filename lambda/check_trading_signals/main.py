@@ -21,10 +21,19 @@ def get_latest_stats():
     Returns the most recent date's data
     """
     try:
-        # Scan to get all dates and find the latest
-        response = stats_table.scan(ProjectionExpression="#d, RSI, last_notification_timestamp", ExpressionAttributeNames={"#d": "date"})
+        # Scan to get all dates and find the latest (handle pagination)
+        items: list[dict] = []
+        response = stats_table.scan(ProjectionExpression="#d, RSI", ExpressionAttributeNames={"#d": "date"})
+        items.extend(response.get("Items", []))
 
-        items = response.get("Items", [])
+        # Handle pagination - DynamoDB scan returns max 1MB per call
+        while "LastEvaluatedKey" in response:
+            response = stats_table.scan(
+                ProjectionExpression="#d, RSI",
+                ExpressionAttributeNames={"#d": "date"},
+                ExclusiveStartKey=response["LastEvaluatedKey"],
+            )
+            items.extend(response.get("Items", []))
 
         if not items:
             print("No stats data found in DynamoDB")
@@ -34,7 +43,7 @@ def get_latest_stats():
         latest_item = max(items, key=lambda x: x["date"])
         latest_date = latest_item["date"]
 
-        print(f"Latest stats date: {latest_date}")
+        print(f"Latest stats date: {latest_date}, total items scanned: {len(items)}")
 
         # Get full data for latest date
         full_response = stats_table.get_item(Key={"date": latest_date})
