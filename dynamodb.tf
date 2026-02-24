@@ -263,3 +263,31 @@ resource "aws_dynamodb_table" "index_data_table" {
     ManagedBy   = "Terraform"
   }
 }
+
+# DynamoDB Table for Market Statistics (上漲/下跌/平盤家數)
+resource "aws_dynamodb_table" "market_stats_table" {
+  name         = "${var.environment}-${var.project_name}-market-stats"
+  billing_mode = var.dynamodb_billing_mode
+  hash_key     = "date"
+
+  attribute {
+    name = "date"
+    type = "S"
+  }
+
+  # Point-in-time recovery for data protection
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  # Server-side encryption
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}

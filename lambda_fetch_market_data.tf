@@ -55,6 +55,7 @@ resource "aws_lambda_function" "fetch_market_data" {
       MARKET_DATA_TABLE_NAME   = aws_dynamodb_table.market_data_table.name
       INVESTOR_DATA_TABLE_NAME = aws_dynamodb_table.investor_data_table.name
       INDEX_DATA_TABLE_NAME    = aws_dynamodb_table.index_data_table.name
+      MARKET_STATS_TABLE_NAME  = aws_dynamodb_table.market_stats_table.name
       ENVIRONMENT              = var.environment
     }
   }
@@ -155,6 +156,17 @@ resource "aws_cloudwatch_event_target" "fetch_investor_data_target" {
 
   input = jsonencode({
     data_type = "investor"
+  })
+}
+
+# EventBridge target for market stats (台股上漲下跌家數)
+resource "aws_cloudwatch_event_target" "fetch_market_stats_target" {
+  rule      = aws_cloudwatch_event_rule.fetch_investor_data_schedule.name
+  target_id = "FetchMarketStatsLambda"
+  arn       = aws_lambda_function.fetch_market_data.arn
+
+  input = jsonencode({
+    data_type = "market_stats"
   })
 }
 
