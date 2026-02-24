@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from datetime import datetime
 
 import boto3
@@ -178,6 +179,9 @@ def check_signals_and_notify(date_str, stats_data):
             send_notification(index_name, signals, stocks_with_signals, current_timestamp)
             signal_names = [f"{s['strategy_type']}-{s['signal_type']}" for s in signals]
             notifications_sent.append(f"{index_name}: {', '.join(signal_names)}")
+
+            # Add delay between notifications to avoid Discord rate limiting (429)
+            time.sleep(1)
 
         # Update notification timestamp in DynamoDB
         if notifications_sent:
