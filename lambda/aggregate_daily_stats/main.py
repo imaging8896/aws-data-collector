@@ -44,9 +44,9 @@ def calculate_rsi(prices, period=14):
     # Calculate price changes
     deltas = [prices[i] - prices[i + 1] for i in range(len(prices) - 1)]
 
-    # Separate gains and losses
+    # Separate gains and losses (using absolute value for losses)
     gains = [d if d > 0 else 0 for d in deltas[:period]]
-    losses = [-d if d < 0 else 0 for d in deltas[:period]]
+    losses = [abs(d) if d < 0 else 0 for d in deltas[:period]]
 
     # Calculate average gain and loss
     avg_gain = sum(gains) / period
