@@ -1,0 +1,35 @@
+name: Market Data Integration Tests
+
+on:
+  # Run on demand (manual trigger)
+  workflow_dispatch:
+  # Run daily at 10:00 UTC (18:00 Taiwan time, after market close)
+  schedule:
+    - cron: "0 10 * * 1-5"  # Monday to Friday only
+
+permissions:
+  contents: read
+
+jobs:
+  integration-tests:
+    name: Fetch Market Data Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          pip install curl_cffi pytest
+
+      - name: Run integration tests
+        working-directory: lambda/fetch_market_data
+        run: |
+          python -m pytest tests/ -v --tb=short
