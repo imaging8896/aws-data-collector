@@ -147,3 +147,84 @@ checkov -d . --framework terraform --check CKV_AWS_18,CKV_AWS_19,CKV_AWS_21
 # 一次執行所有檢查的組合指令
 tf fmt -check -recursive && tflint && checkov -d . --framework terraform --quiet
 ```
+
+---
+
+## Terraform AI 反向審查 (AI Reverse Review)
+
+**重要**: 當修改任何 Terraform 檔案 (`*.tf`, `*.tfvars`) 後，**必須**執行以下反向審查流程：
+
+### 審查流程
+
+1. **執行 Terraform Plan**
+   ```bash
+   # 初始化 (如果尚未初始化)
+   # 注意: 使用 -backend=false 時無法比較遠端狀態
+   # 若需要完整的狀態比較，請確保已配置正確的 backend
+   terraform init -backend=false
+   
+   # 執行 plan 並儲存輸出
+   terraform plan -no-color 2>&1 | tee /tmp/terraform_plan_output.txt
+   ```
+
+2. **AI 自我審查 Plan 結果**
+   
+   在執行 `terraform plan` 後，請仔細審查輸出並產生審查報告，包含以下項目：
+
+   #### 審查項目清單
+
+   | 類別 | 檢查項目 | 風險等級 |
+   |------|----------|----------|
+   | **變更摘要** | 列出所有要新增、修改、刪除的資源 | - |
+   | **資安風險** | 是否有公開的 S3 bucket、過於寬鬆的 IAM Policy、未加密的資源 | 🔴 高 |
+   | **成本影響** | 是否有高成本資源 (如 NAT Gateway, RDS, EKS) | 🟡 中 |
+   | **破壞性變更** | 是否有 `destroy` 或 `replace` 的資源 | 🔴 高 |
+   | **最佳實踐** | 是否符合 AWS Well-Architected Framework | 🟢 低 |
+   | **相依性風險** | 是否有跨資源相依性可能導致服務中斷 | 🟡 中 |
+
+   #### 審查報告格式
+
+   請以以下格式產生審查報告：
+
+   ```markdown
+   ## 🔍 Terraform Plan AI 審查報告
+
+   ### 📋 變更摘要
+   - **新增**: X 個資源
+   - **修改**: X 個資源  
+   - **刪除**: X 個資源
+
+   ### 🔴 高風險項目
+   - [列出發現的高風險問題]
+
+   ### 🟡 中風險項目
+   - [列出發現的中風險問題]
+
+   ### 🟢 低風險項目 / 建議
+   - [列出發現的低風險問題或改善建議]
+
+   ### ✅ 審查結論
+   - [ ] 建議：可以安全 apply
+   - [ ] 警告：需要人工確認後再 apply
+   - [ ] 拒絕：存在嚴重問題，不建議 apply
+   ```
+
+3. **將審查報告輸出至檔案**
+   
+   將審查報告儲存至 `/tmp/terraform_review_report.md`，並在對話中顯示報告內容。
+
+### 自動觸發條件
+
+以下情況會自動觸發 AI 反向審查：
+- 新增 `.tf` 檔案
+- 修改現有 `.tf` 檔案
+- 修改 `.tfvars` 檔案
+- 修改 `terraform.tfvars` 或任何變數檔案
+
+### 審查重點提醒
+
+1. **資源刪除警告**: 如果 plan 顯示要刪除資源，務必確認是否為預期行為
+2. **敏感資料暴露**: 檢查是否有 API key、密碼等敏感資訊被硬編碼
+3. **權限過大**: 檢查 IAM Policy 是否使用 `*` 萬用字元
+4. **公開存取**: 檢查是否有資源被設定為公開存取
+5. **加密設定**: 確認所有資料儲存服務都啟用加密
