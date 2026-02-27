@@ -6,14 +6,14 @@ mock_provider "aws" {}
 
 # Variable definitions for testing
 variables {
-  environment         = "test"
-  project_name        = "aws-data-collector"
-  lambda_runtime      = "python3.13"
-  lambda_timeout      = 30
+  environment           = "test"
+  project_name          = "aws-data-collector"
+  lambda_runtime        = "python3.13"
+  lambda_timeout        = 30
   dynamodb_billing_mode = "PAY_PER_REQUEST"
-  gemini_api_key      = "test-api-key-12345"
-  discord_webhook_url = "https://discord.com/api/webhooks/test/test"
-  categories          = "test-categories"
+  gemini_api_key        = "test-api-key-12345"
+  discord_webhook_url   = "https://discord.com/api/webhooks/test/test"
+  categories            = "test-categories"
 }
 
 # Test: Verify Lambda function resource configuration
