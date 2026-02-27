@@ -38,18 +38,19 @@ def get_market_stats(data_date: date) -> dict | None:
     print(f"Got market stats data for {data_date}")
 
     # Parse the market statistics from "tables" array
-    # Looking for the table with title "大盤統計資訊" or parsing "fields" and "data"
-    # The MI_INDEX response contains tables like:
-    # - 漲跌證券數合計 (Rise/Fall stocks count)
+    # Looking for the table with title "漲跌證券數合計"
     # Response structure:
     # {
     #     "tables": [
     #         {
-    #             "title": "...",
-    #             "fields": ["項目", "漲停", "上漲", "持平", "下跌", "跌停"],
+    #             "title": "漲跌證券數合計",
+    #             "fields": ["類型", "整體市場", "股票"],
     #             "data": [
-    #                 ["整體市場", "65", "559", "222", "512", "24"],
-    #                 ...
+    #                 ["上漲(漲停)", "8,991(212)", "583(41)"],
+    #                 ["下跌(跌停)", "5,307(60)", "400(3)"],
+    #                 ["持平", "777", "84"],
+    #                 ["未成交", "16,409", "1"],
+    #                 ["無比價", "2,597", "0"]
     #             ]
     #         }
     #     ]
@@ -57,28 +58,82 @@ def get_market_stats(data_date: date) -> dict | None:
     tables = data.get("tables", [])
 
     for table in tables:
+        title = table.get("title", "")
         fields = table.get("fields", [])
         table_data = table.get("data", [])
 
-        # Find the table with 上漲/下跌/持平 fields
-        if "上漲" in fields and "下跌" in fields:
-            # Find the "整體市場" row for overall market statistics
-            for row in table_data:
-                if len(row) >= 6 and "整體市場" in row[0]:
-                    # Parse fields: [項目, 漲停, 上漲, 持平, 下跌, 跌停]
-                    # Example: ["整體市場", "65", "559", "222", "512", "24"]
-                    up_limit = int(row[1].replace(",", ""))  # 漲停
-                    up = int(row[2].replace(",", ""))  # 上漲
-                    unchanged = int(row[3].replace(",", ""))  # 持平
-                    down = int(row[4].replace(",", ""))  # 下跌
-                    down_limit = int(row[5].replace(",", ""))  # 跌停
-
-                    return {
-                        "up": up,
-                        "up_limit": up_limit,
-                        "down": down,
-                        "down_limit": down_limit,
-                        "unchanged": unchanged,
-                    }
+        # Find the table with title "漲跌證券數合計"
+        if "漲跌證券數合計" in title and "整體市場" in fields:
+            result = _parse_market_stats_table(table_data)
+            if result:
+                return result
 
     raise Exception(f"Could not find market statistics in response: {data}")
+
+
+def _parse_market_stats_table(table_data: list) -> dict | None:
+    """
+    Parse the market statistics table data.
+
+    Args:
+        table_data: List of rows from the table.
+            Example: [["上漲(漲停)", "8,991(212)", "583(41)"], ...]
+
+    Returns:
+        Dictionary with parsed statistics or None if parsing fails.
+    """
+    stats: dict[str, int] = {}
+
+    for row in table_data:
+        if len(row) < 3:
+            continue
+
+        row_type = row[0]
+        # Use "股票" column (index 2) instead of "整體市場" (index 1)
+        stock_value = row[2]
+
+        if "上漲" in row_type:
+            # Parse "583(41)" format -> up=583, up_limit=41
+            up, up_limit = _parse_value_with_parentheses(stock_value)
+            stats["up"] = up
+            stats["up_limit"] = up_limit
+        elif "下跌" in row_type:
+            # Parse "400(3)" format -> down=400, down_limit=3
+            down, down_limit = _parse_value_with_parentheses(stock_value)
+            stats["down"] = down
+            stats["down_limit"] = down_limit
+        elif "持平" in row_type:
+            stats["unchanged"] = _parse_number(stock_value)
+
+    # Verify we have all required fields
+    required_fields = ["up", "up_limit", "down", "down_limit", "unchanged"]
+    if all(field in stats for field in required_fields):
+        return stats
+
+    return None
+
+
+def _parse_value_with_parentheses(value: str) -> tuple[int, int]:
+    """
+    Parse a value like "8,991(212)" into (8991, 212).
+
+    Args:
+        value: String in format "number(number)" or just "number"
+
+    Returns:
+        Tuple of (main_value, parentheses_value)
+    """
+    value = value.strip()
+
+    if "(" in value and ")" in value:
+        # Split "8,991(212)" into "8,991" and "212"
+        main_part = value.split("(")[0]
+        paren_part = value.split("(")[1].rstrip(")")
+        return _parse_number(main_part), _parse_number(paren_part)
+
+    return _parse_number(value), 0
+
+
+def _parse_number(value: str) -> int:
+    """Parse a number string with commas into an integer."""
+    return int(value.replace(",", "").strip())
