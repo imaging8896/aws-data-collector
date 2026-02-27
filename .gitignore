@@ -75,3 +75,7 @@ __pycache__/
 
 # Other
 .DS_Store
+
+# Terraform binary
+terraform
+LICENSE.txt
