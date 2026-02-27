@@ -228,3 +228,60 @@ tf fmt -check -recursive && tflint && checkov -d . --framework terraform --quiet
 3. **權限過大**: 檢查 IAM Policy 是否使用 `*` 萬用字元
 4. **公開存取**: 檢查是否有資源被設定為公開存取
 5. **加密設定**: 確認所有資料儲存服務都啟用加密
+
+---
+
+## Fetch Market Data 測試規則
+
+當修改 `lambda/fetch_market_data` 目錄下的程式碼時，**必須**遵循以下測試規則：
+
+### 修改既有資料來源時
+
+當修改 `lambda/fetch_market_data` 目錄下任何**既有**的資料來源模組（如 `cnyes/`, `twse/`, `yahoo/` 等）時：
+
+1. **觸發 Integration Tests Action**：使用 GitHub MCP 工具手動觸發 `Market Data Integration Tests` workflow（`.github/workflows/integration-tests.yml`）
+   ```
+   使用 actions_list 找到 integration-tests.yml workflow
+   使用 workflow_dispatch 觸發該 workflow
+   ```
+
+2. **等待並讀取測試結果**：等待 workflow 執行完成後，讀取測試結果
+   ```
+   使用 actions_list 取得最新的 workflow run
+   使用 get_job_logs 讀取測試日誌
+   ```
+
+3. **根據結果修正**：如果測試失敗，根據錯誤訊息修正程式碼，並重複上述步驟直到測試通過
+
+### 新增資料來源時
+
+當在 `lambda/fetch_market_data` 目錄下新增**新的**資料來源模組時：
+
+1. **新增對應的 Integration Test**：在現有測試檔案 `lambda/fetch_market_data/tests/test_integration_market_data.py` 中新增測試案例
+   - 測試類別命名：`TestXxxYyy`（例如 `TestNewDataSource`）
+   - 測試函式命名：`test_get_xxx()`
+   - 測試內容應驗證：
+     - API 回傳的資料結構正確
+     - 資料型別符合預期（如 `Decimal`, `str`, `int`）
+     - 必要欄位存在
+
+2. **觸發 Integration Tests Action**：同上述流程觸發並執行測試
+
+3. **根據結果修正**：確保新增的測試案例通過
+
+### 測試範例
+
+```python
+class TestNewDataSource:
+    """Integration tests for new data source API."""
+
+    def test_get_data(self) -> None:
+        """Test fetching data from new source API."""
+        from new_source.fetcher import get_data
+
+        result = get_data()
+
+        assert isinstance(result, dict)
+        assert "expected_field" in result
+        assert isinstance(result["expected_field"], Decimal)
+```
