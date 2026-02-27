@@ -32,6 +32,15 @@
 - 遵循專案既有的程式碼風格
 - 使用一致的縮排和格式（由 Ruff 和 Terraform fmt 自動處理）
 
+### 外部資料調用規則 (External Data Fetching Requirements)
+
+**重要**: 當需要從外部網址（網頁或 API）取得資料時，必須遵循以下步驟：
+
+1. **實際呼叫並驗證**: 在產生程式碼前，務必實際呼叫該網址/API 並取得真實的資料格式
+2. **文件化資料結構**: 清楚記錄接收到的資料格式、欄位名稱、資料型別和結構
+3. **基於真實資料產生**: 根據實際取得的資料格式編寫程式碼，避免基於假設或猜測生成代碼
+4. **錯誤處理**: 考慮可能的響應變化和邊界情況，加入適當的錯誤處理機制
+
 ---
 
 ## Code Quality Checks
@@ -86,7 +95,7 @@ Ensure all parameters and return types in your functions are properly annotated.
 terraform fmt -check -recursive
 
 # Auto-fix formatting
-terraform fmt -recursive
+tf fmt -recursive
 ```
 
 #### TFLint (雲端服務最佳實踐檢查)
@@ -136,5 +145,5 @@ checkov -d . --framework terraform --check CKV_AWS_18,CKV_AWS_19,CKV_AWS_21
 
 ```bash
 # 一次執行所有檢查的組合指令
-terraform fmt -check -recursive && tflint && checkov -d . --framework terraform --quiet
+tf fmt -check -recursive && tflint && checkov -d . --framework terraform --quiet
 ```
