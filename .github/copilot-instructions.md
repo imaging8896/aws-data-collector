@@ -235,6 +235,24 @@ tf fmt -check -recursive && tflint && checkov -d . --framework terraform --quiet
 
 當修改 `lambda/fetch_market_data` 目錄下的程式碼時，**必須**遵循以下測試規則：
 
+### ⚠️ 防止過度測試警告
+
+**重要**：Integration tests 會向真實的外部 API/網站發送請求。過於頻繁的測試可能導致：
+- IP 被目標網站暫時或永久封鎖
+- 觸發網站的防爬蟲機制
+- 違反網站的使用條款
+
+**測試頻率限制**：
+- 在同一個 PR 中，**最多觸發 3 次** Integration Tests workflow
+- 每次觸發測試之間，**至少間隔 10 分鐘**
+- 如果測試失敗，先仔細分析錯誤原因並確認修正後再重新測試
+- 避免「試錯法」式的反覆測試
+
+**建議做法**：
+1. 在觸發 Integration Tests 前，先確保程式碼邏輯正確
+2. 使用 code review 和靜態分析工具先檢查程式碼
+3. 如果需要多次測試，考慮是否可以先在本地進行部分驗證
+
 ### 修改既有資料來源時
 
 當修改 `lambda/fetch_market_data` 目錄下任何**既有**的資料來源模組（如 `cnyes/`, `twse/`, `yahoo/` 等）時：
