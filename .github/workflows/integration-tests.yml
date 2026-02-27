@@ -27,9 +27,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install curl_cffi
+          pip install curl_cffi pytest
 
       - name: Run integration tests
         working-directory: lambda/fetch_market_data
         run: |
-          python -m unittest discover -s tests -p "test_*.py" -v
+          python -m pytest tests/ -v --tb=short

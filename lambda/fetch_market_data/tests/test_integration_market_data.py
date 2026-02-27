@@ -8,7 +8,6 @@ Note: These tests may fail on non-trading days (weekends, holidays) or if the
 external APIs are temporarily unavailable.
 """
 
-import unittest
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -22,7 +21,7 @@ def get_recent_trading_day() -> date:
     return target_date
 
 
-class TestCnyesTrade(unittest.TestCase):
+class TestCnyesTrade:
     """Integration tests for CNYES trade data API."""
 
     def test_get_trades_for_tw_index(self) -> None:
@@ -35,22 +34,22 @@ class TestCnyesTrade(unittest.TestCase):
 
         result = get_trades([index], from_dt=from_dt, to_dt=now)
 
-        self.assertIn(index, result)
+        assert index in result
         index_data = result[index]
-        self.assertIn("name", index_data)
-        self.assertIn("data", index_data)
-        self.assertIsInstance(index_data["name"], str)
-        self.assertIsInstance(index_data["data"], list)
+        assert "name" in index_data
+        assert "data" in index_data
+        assert isinstance(index_data["name"], str)
+        assert isinstance(index_data["data"], list)
         # Should have at least some data points
-        self.assertGreater(len(index_data["data"]), 0)
+        assert len(index_data["data"]) > 0
         # Verify data structure: (date_str, open, close, high, low, volume, turnover)
         first_data = index_data["data"][0]
-        self.assertEqual(len(first_data), 7)
-        self.assertIsInstance(first_data[0], str)  # date
+        assert len(first_data) == 7
+        assert isinstance(first_data[0], str)  # date
         for i in range(1, 7):
             # Open, close, high, low should be Decimal; volume and turnover can be None
             if first_data[i] is not None:
-                self.assertIsInstance(first_data[i], Decimal, f"Field {i} should be Decimal")
+                assert isinstance(first_data[i], Decimal), f"Field {i} should be Decimal"
 
     def test_get_trades_for_stock(self) -> None:
         """Test fetching stock (2330 TSMC) data from CNYES API."""
@@ -62,15 +61,15 @@ class TestCnyesTrade(unittest.TestCase):
 
         result = get_trades([index], from_dt=from_dt, to_dt=now)
 
-        self.assertIn(index, result)
+        assert index in result
         index_data = result[index]
-        self.assertIn("name", index_data)
-        self.assertIn("data", index_data)
-        self.assertIsInstance(index_data["name"], str)
-        self.assertGreater(len(index_data["data"]), 0)
+        assert "name" in index_data
+        assert "data" in index_data
+        assert isinstance(index_data["name"], str)
+        assert len(index_data["data"]) > 0
 
 
-class TestTwseIndex(unittest.TestCase):
+class TestTwseIndex:
     """Integration tests for TWSE index API."""
 
     def test_get_indexes(self) -> None:
@@ -82,21 +81,21 @@ class TestTwseIndex(unittest.TestCase):
         result = get_indexes(test_date)
 
         # Result should be a dictionary (could be empty on holidays)
-        self.assertIsInstance(result, dict)
+        assert isinstance(result, dict)
         if result:  # If data is available
             # Verify structure of each index entry
             for name, data in result.items():
-                self.assertIsInstance(name, str)
-                self.assertIn("value", data)
-                self.assertIn("date", data)
-                self.assertIn("diff", data)
-                self.assertIn("diff_percent", data)
-                self.assertIsInstance(data["value"], Decimal)
-                self.assertIsInstance(data["diff"], Decimal)
-                self.assertIsInstance(data["diff_percent"], Decimal)
+                assert isinstance(name, str)
+                assert "value" in data
+                assert "date" in data
+                assert "diff" in data
+                assert "diff_percent" in data
+                assert isinstance(data["value"], Decimal)
+                assert isinstance(data["diff"], Decimal)
+                assert isinstance(data["diff_percent"], Decimal)
 
 
-class TestTwseInvestor(unittest.TestCase):
+class TestTwseInvestor:
     """Integration tests for TWSE investor data API (三大法人)."""
 
     def test_get_investor(self) -> None:
@@ -108,20 +107,20 @@ class TestTwseInvestor(unittest.TestCase):
 
         # Result can be None on non-trading days
         if result is not None:
-            self.assertIsInstance(result, dict)
+            assert isinstance(result, dict)
             # Should contain major investor types
             expected_keys = {"自營商(自行買賣)", "自營商(避險)", "投信", "外資"}
             actual_keys = set(result.keys())
-            self.assertTrue(expected_keys.issubset(actual_keys), f"Missing expected investor types. Got: {actual_keys}")
+            assert expected_keys.issubset(actual_keys), f"Missing expected investor types. Got: {actual_keys}"
             # Verify data structure
             for name, data in result.items():
-                self.assertIn("buy", data)
-                self.assertIn("sell", data)
-                self.assertIsInstance(data["buy"], Decimal)
-                self.assertIsInstance(data["sell"], Decimal)
+                assert "buy" in data
+                assert "sell" in data
+                assert isinstance(data["buy"], Decimal)
+                assert isinstance(data["sell"], Decimal)
 
 
-class TestTwseMarketStats(unittest.TestCase):
+class TestTwseMarketStats:
     """Integration tests for TWSE market statistics API."""
 
     def test_get_market_stats(self) -> None:
@@ -133,15 +132,15 @@ class TestTwseMarketStats(unittest.TestCase):
 
         # Result can be None on non-trading days
         if result is not None:
-            self.assertIsInstance(result, dict)
+            assert isinstance(result, dict)
             required_fields = ["up", "up_limit", "down", "down_limit", "unchanged"]
             for field in required_fields:
-                self.assertIn(field, result, f"Missing required field: {field}")
-                self.assertIsInstance(result[field], int)
-                self.assertGreaterEqual(result[field], 0)
+                assert field in result, f"Missing required field: {field}"
+                assert isinstance(result[field], int)
+                assert result[field] >= 0
 
 
-class TestTwseStockGroupTrade(unittest.TestCase):
+class TestTwseStockGroupTrade:
     """Integration tests for TWSE stock group trade API."""
 
     def test_get_stock_group_trade(self) -> None:
@@ -153,20 +152,20 @@ class TestTwseStockGroupTrade(unittest.TestCase):
 
         # Result can be None on non-trading days
         if result is not None:
-            self.assertIsInstance(result, dict)
-            self.assertGreater(len(result), 0)
+            assert isinstance(result, dict)
+            assert len(result) > 0
             # Verify data structure
             for name, data in result.items():
-                self.assertIsInstance(name, str)
-                self.assertIn("shares", data)
-                self.assertIn("amount", data)
-                self.assertIn("transactions", data)
-                self.assertIsInstance(data["shares"], Decimal)
-                self.assertIsInstance(data["amount"], Decimal)
-                self.assertIsInstance(data["transactions"], Decimal)
+                assert isinstance(name, str)
+                assert "shares" in data
+                assert "amount" in data
+                assert "transactions" in data
+                assert isinstance(data["shares"], Decimal)
+                assert isinstance(data["amount"], Decimal)
+                assert isinstance(data["transactions"], Decimal)
 
 
-class TestYahooTwIndex(unittest.TestCase):
+class TestYahooTwIndex:
     """Integration tests for Yahoo Finance Taiwan index API."""
 
     def test_get_tw_indexes(self) -> None:
@@ -175,17 +174,13 @@ class TestYahooTwIndex(unittest.TestCase):
 
         result = get_tw_indexes()
 
-        self.assertIsInstance(result, list)
+        assert isinstance(result, list)
         # Should have lots of historical data points
-        self.assertGreater(len(result), 1000)
+        assert len(result) > 1000
         # Verify data structure: (date, open, close, high, low, volume, adjclose)
         first_data = result[0]
-        self.assertEqual(len(first_data), 7)
-        self.assertIsInstance(first_data[0], str)  # date
+        assert len(first_data) == 7
+        assert isinstance(first_data[0], str)  # date
         for i in range(1, 7):
             if first_data[i] is not None:
-                self.assertIsInstance(first_data[i], Decimal, f"Field {i} should be Decimal")
-
-
-if __name__ == "__main__":
-    unittest.main()
+                assert isinstance(first_data[i], Decimal), f"Field {i} should be Decimal"
