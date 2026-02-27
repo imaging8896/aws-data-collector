@@ -10,9 +10,11 @@ dynamodb = boto3.resource("dynamodb")
 market_data_table_name = os.environ["MARKET_DATA_TABLE_NAME"]
 investor_data_table_name = os.environ["INVESTOR_DATA_TABLE_NAME"]
 index_data_table_name = os.environ["INDEX_DATA_TABLE_NAME"]
+market_stats_table_name = os.environ["MARKET_STATS_TABLE_NAME"]
 market_data_table = dynamodb.Table(market_data_table_name)  # type: ignore
 investor_data_table = dynamodb.Table(investor_data_table_name)  # type: ignore
 index_data_table = dynamodb.Table(index_data_table_name)  # type: ignore
+market_stats_table = dynamodb.Table(market_stats_table_name)  # type: ignore
 
 
 def retry_once(func):
@@ -71,6 +73,8 @@ def handler(event, context):
             get_indexes(data_date)
         elif data_type == "stock_group_trade":
             get_stock_group_trade(data_date)
+        elif data_type == "market_stats":
+            get_market_stats(data_date)
         else:
             raise ValueError(f"Unsupported data_type: {data_type}")
 
@@ -224,6 +228,43 @@ def get_stock_group_trade(data_date: date):
         )
 
     print(f"Saved/Updated {len(data)} stock group trades")
+    return data
+
+
+@retry_once
+def get_market_stats(data_date: date):
+    """Fetch and store market statistics (上漲/下跌/平盤家數)"""
+    from twse.market_stats import get_market_stats as fetch_market_stats
+
+    print(f"Getting market stats data for: {data_date}")
+
+    data = fetch_market_stats(data_date)
+
+    if not data:
+        print(f"No market stats data available for {data_date}")
+        return data
+
+    updated_at = int(datetime.now(timezone.utc).timestamp())
+
+    # Store market stats in DynamoDB
+    market_stats_table.put_item(
+        Item={
+            "date": data_date.isoformat(),
+            "up": data["up"],
+            "up_limit": data["up_limit"],
+            "down": data["down"],
+            "down_limit": data["down_limit"],
+            "unchanged": data["unchanged"],
+            "updated_at": updated_at,
+        }
+    )
+
+    print(
+        f"Saved market stats for {data_date}: "
+        f"up={data['up']}, up_limit={data['up_limit']}, "
+        f"down={data['down']}, down_limit={data['down_limit']}, "
+        f"unchanged={data['unchanged']}"
+    )
     return data
 
 
