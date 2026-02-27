@@ -1,0 +1,205 @@
+name: Terraform AI Review
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "*.tf"
+      - "*.tfvars"
+      - ".terraform.lock.hcl"
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+env:
+  TF_VAR_environment: "review"
+  TF_VAR_project_name: "aws-data-collector"
+  TF_VAR_lambda_runtime: "python3.13"
+  TF_VAR_lambda_timeout: "30"
+  TF_VAR_dynamodb_billing_mode: "PAY_PER_REQUEST"
+  TF_VAR_gemini_api_key: "dummy-key-for-plan"
+  TF_VAR_discord_webhook_url: "https://discord.com/api/webhooks/dummy/dummy"
+  TF_VAR_categories: "dummy-categories"
+
+jobs:
+  terraform-plan-review:
+    name: AI Review Terraform Plan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.0"
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-northeast-1
+
+      - name: Terraform Init
+        id: init
+        # Using -backend=false as this is a plan-only review.
+        # Full state comparison happens during actual deployment.
+        run: terraform init -backend=false
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan -no-color -out=tfplan 2>&1 | tee plan_output.txt
+          echo "plan_output<<EOF" >> $GITHUB_OUTPUT
+          cat plan_output.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: AI Review Terraform Plan
+        id: ai_review
+        uses: actions/github-script@v7
+        env:
+          PLAN_OUTPUT: ${{ steps.plan.outputs.plan_output }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        with:
+          script: |
+            const planOutput = process.env.PLAN_OUTPUT || '';
+
+            // Skip if plan is empty or no changes
+            if (!planOutput || planOutput.includes('No changes')) {
+              core.setOutput('review', 'No changes detected in Terraform plan.');
+              return;
+            }
+
+            // Handle truncation with notification
+            const maxLength = 10000;
+            const isTruncated = planOutput.length > maxLength;
+            const truncatedPlan = isTruncated 
+              ? planOutput.substring(0, maxLength) + '\n\n... [Output truncated]'
+              : planOutput;
+            const truncationNote = isTruncated 
+              ? '\n\nNote: The plan output was truncated due to length. Some resources may not be shown.'
+              : '';
+
+            // Prepare the prompt for AI review
+            const prompt = `You are a senior DevOps engineer reviewing a Terraform plan. 
+            Please analyze the following Terraform plan output and provide:
+            1. A brief summary of the changes
+            2. Potential security concerns (if any)
+            3. Cost implications (if identifiable)
+            4. Best practice recommendations
+            5. Any red flags or issues that need attention
+
+            Please format your response in Markdown.${truncationNote}
+
+            Terraform Plan Output:
+            \`\`\`
+            ${truncatedPlan}
+            \`\`\`
+            `;
+
+            let reviewContent = '';
+
+            // Use OpenAI API if available
+            if (process.env.OPENAI_API_KEY) {
+              try {
+                const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+                  },
+                  body: JSON.stringify({
+                    model: 'gpt-4o-mini',
+                    messages: [
+                      {
+                        role: 'system',
+                        content: 'You are a senior DevOps engineer specializing in AWS and Terraform. Provide concise, actionable feedback.'
+                      },
+                      {
+                        role: 'user',
+                        content: prompt
+                      }
+                    ],
+                    max_tokens: 2000,
+                    temperature: 0.3
+                  })
+                });
+
+                // Check for HTTP errors
+                if (!response.ok) {
+                  reviewContent = `AI review failed: API returned status ${response.status}`;
+                } else {
+                  const data = await response.json();
+                  if (data.choices && data.choices[0]) {
+                    reviewContent = data.choices[0].message.content;
+                  } else {
+                    reviewContent = 'AI review failed: Unable to parse response';
+                  }
+                }
+              } catch (error) {
+                // Sanitize error message to avoid exposing sensitive information
+                reviewContent = 'AI review failed: An error occurred while calling the AI service.';
+                core.warning(`AI review error: ${error.message}`);
+              }
+            } else {
+              reviewContent = '⚠️ AI review skipped: OPENAI_API_KEY not configured.';
+            }
+
+            core.setOutput('review', reviewContent);
+
+      - name: Post AI Review Comment
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        env:
+          AI_REVIEW: ${{ steps.ai_review.outputs.review }}
+          PLAN_EXIT_CODE: ${{ steps.plan.outcome }}
+        with:
+          script: |
+            const aiReview = process.env.AI_REVIEW || 'No review available';
+            const planOutcome = process.env.PLAN_EXIT_CODE;
+
+            const body = `## 🤖 AI Terraform Plan Review
+
+            ### Plan Status: ${planOutcome === 'success' ? '✅ Success' : '❌ Failed'}
+
+            ### AI Analysis
+
+            ${aiReview}
+
+            ---
+            *This review was automatically generated by AI. Please verify all suggestions before applying.*
+            `;
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('🤖 AI Terraform Plan Review')
+            );
+
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
