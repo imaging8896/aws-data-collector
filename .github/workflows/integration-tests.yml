@@ -7,6 +7,9 @@ on:
   schedule:
     - cron: "0 10 * * 1-5"  # Monday to Friday only
 
+permissions:
+  contents: read
+
 jobs:
   integration-tests:
     name: Fetch Market Data Integration Tests
@@ -29,5 +32,4 @@ jobs:
       - name: Run integration tests
         working-directory: lambda/fetch_market_data
         run: |
-          python -m pytest tests/test_integration_market_data.py -v --tb=short || \
-          python -m unittest tests.test_integration_market_data -v
+          python -m unittest discover -s tests -p "test_*.py" -v
