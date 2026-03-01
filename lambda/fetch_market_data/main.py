@@ -285,6 +285,7 @@ def get_yf_stock_data(symbols: list[str], period: str = "1mo"):
         period: yfinance period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max)
     """
     from yf import get_stock_history, get_tw_stock_history
+    from cnyes.trade import Index
 
     print(f"Getting yfinance stock data for: {symbols}, period: {period}")
     now = datetime.now(timezone.utc)
@@ -307,7 +308,7 @@ def get_yf_stock_data(symbols: list[str], period: str = "1mo"):
         for day_data in data:
             market_data_table.put_item(
                 Item={
-                    "symbol": symbol_name,
+                    "symbol": Index.tw_index().symbol if symbol_name == "tw_index" else symbol_name,
                     "date": day_data["date"],
                     "open": day_data["open"],
                     "close": day_data["close"],
