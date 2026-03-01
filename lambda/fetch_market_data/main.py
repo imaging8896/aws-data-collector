@@ -281,37 +281,41 @@ def get_yf_stock_data(symbols: list[str], from_days: int, period: str = "1mo"):
     Args:
         symbols: List of stock symbols (e.g., ["tw_index", "2330"])
                  "tw_index" will be converted to "^TWII"
-                 Numeric strings will be converted to Taiwan stock format (e.g., "2330" -> "2330.TW")
+                 Numeric strings will use get_tw_stock_history (tries .TW then .TWO)
         from_days: Number of days to fetch (used when period is not specified)
         period: yfinance period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max)
     """
-    from yf import get_stock_history
-
-    def _to_yf_symbol(name: str) -> str:
-        """Convert symbol name to yfinance format."""
-        if name == "tw_index":
-            return "^TWII"
-        elif name.isdigit():
-            return f"{name}.TW"
-        return name
+    from yf import get_stock_history, get_tw_stock_history
 
     print(f"Getting yfinance stock data for: {symbols}, period: {period}")
     now = datetime.now(timezone.utc)
 
     for symbol_name in symbols:
-        yf_symbol = _to_yf_symbol(symbol_name)
-        print(f"Fetching {yf_symbol}...")
+        print(f"Fetching {symbol_name}...")
 
         # Calculate date range if using from_days
         if from_days > 0:
             end_date = date.today()
             start_date = end_date - timedelta(days=from_days)
-            data = get_stock_history(yf_symbol, start_date=start_date, end_date=end_date)
+
+            if symbol_name == "tw_index":
+                data = get_stock_history("^TWII", start_date=start_date, end_date=end_date)
+            elif symbol_name.isdigit():
+                # Use get_tw_stock_history which tries .TW first, then .TWO
+                data = get_tw_stock_history(symbol_name, start_date=start_date, end_date=end_date)
+            else:
+                data = get_stock_history(symbol_name, start_date=start_date, end_date=end_date)
         else:
-            data = get_stock_history(yf_symbol, period=period)
+            if symbol_name == "tw_index":
+                data = get_stock_history("^TWII", period=period)
+            elif symbol_name.isdigit():
+                # Use get_tw_stock_history which tries .TW first, then .TWO
+                data = get_tw_stock_history(symbol_name, period=period)
+            else:
+                data = get_stock_history(symbol_name, period=period)
 
         if not data:
-            print(f"No data available for {yf_symbol}")
+            print(f"No data available for {symbol_name}")
             continue
 
         # Store each day's data in DynamoDB
@@ -330,7 +334,7 @@ def get_yf_stock_data(symbols: list[str], from_days: int, period: str = "1mo"):
                 }
             )
 
-        print(f"Saved {len(data)} data points for {symbol_name} ({yf_symbol})")
+        print(f"Saved {len(data)} data points for {symbol_name} ({symbol_name})")
 
 
 if __name__ == "__main__":

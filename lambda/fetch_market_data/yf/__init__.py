@@ -92,6 +92,7 @@ def get_tw_stock_history(
 ) -> list[dict] | None:
     """
     Fetch Taiwan stock historical data.
+    Automatically tries .TW (TWSE listed) first, then .TWO (TPEx/OTC) if no data.
 
     Args:
         stock_id: Taiwan stock ID (e.g., "2330" for TSMC)
@@ -102,5 +103,13 @@ def get_tw_stock_history(
     Returns:
         List of daily data dictionaries or None if no data available.
     """
+    # Try TWSE listed stock first (.TW)
     symbol = f"{stock_id}.TW"
+    result = get_stock_history(symbol, start_date, end_date, period)
+
+    if result:
+        return result
+
+    # If no data, try TPEx/OTC stock (.TWO)
+    symbol = f"{stock_id}.TWO"
     return get_stock_history(symbol, start_date, end_date, period)
