@@ -284,8 +284,8 @@ def get_yf_stock_data(symbols: list[str], period: str = "1mo"):
                  Numeric strings will use get_tw_stock_history (tries .TW then .TWO)
         period: yfinance period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max)
     """
-    from yf import get_stock_history, get_tw_stock_history
     from cnyes.trade import Index
+    from yf import get_stock_history, get_tw_stock_history
 
     print(f"Getting yfinance stock data for: {symbols}, period: {period}")
     now = datetime.now(timezone.utc)
