@@ -1,3 +1,4 @@
+import time
 from datetime import date
 
 from curl_cffi import requests
@@ -19,6 +20,7 @@ def get_market_stats(data_date: date) -> dict | None:
             "unchanged": 200,  # 平盤家數
         }
     """
+    print(f"Fetching market stats for {data_date}")
     data_date_str_without_dash = data_date.isoformat().replace("-", "")
     url = f"https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date={data_date_str_without_dash}&response=json"
 
@@ -31,6 +33,10 @@ def get_market_stats(data_date: date) -> dict | None:
 
     if data.get("stat") == "很抱歉，沒有符合條件的資料!":
         return None
+
+    if "請重新查詢" in data.get("stat"):
+        time.sleep(5)  # Wait before retrying
+        return get_market_stats(data_date)
 
     if data.get("stat") != "OK":
         raise Exception(f"API error:\n{data}")
