@@ -214,7 +214,7 @@ def get_index_rsi_for_date(date_str, periods=[5, 9, 14, 22]):
             if any(["value" not in x for x in query_response.get("Items", [])]):
                 raise ValueError(f"Missing 'value' field in index data for {index_name} on {date_str}")
             historical_prices = [i["value"] for i in query_response.get("Items", [])]
-            historical_turnover = [i.get("turnover", 0) for i in query_response.get("Items", [])]
+            historical_volume = [i.get("volume", 0) for i in query_response.get("Items", [])]
 
             # Calculate RSI and MA for each period
             if len(historical_prices) >= max_rsi_period + 1:
@@ -246,13 +246,13 @@ def get_index_rsi_for_date(date_str, periods=[5, 9, 14, 22]):
                     # Prepare historical data for short strategy
                     historical_data = []
                     for item in query_response.get("Items", []):
-                        historical_data.append({"value": item.get("value"), "turnover": item.get("turnover", 0), "date": item.get("date")})
+                        historical_data.append({"value": item.get("value"), "volume": item.get("volume", 0), "date": item.get("date")})
 
                     # Add current price and check strategies
                     current_price = float(historical_prices[0]) if historical_prices else 0
-                    current_turnover = float(historical_turnover[0]) if historical_turnover else 0
+                    current_volume = float(historical_volume[0]) if historical_volume else 0
 
-                    strategy_data = {"value": current_price, "turnover": current_turnover, **result_data}
+                    strategy_data = {"value": current_price, "volume": current_volume, **result_data}
 
                     # Check medium-term strategy
                     medium_strategy_result = check_medium_strategy(strategy_data)
@@ -321,7 +321,7 @@ def get_stock_historical_data(symbol, target_date, days=10):
         days: Number of days of historical data to retrieve
 
     Returns:
-        List of dicts with date, close, high, low, turnover (newest to oldest)
+        List of dicts with date, close, high, low, volume (newest to oldest)
     """
     if not market_data_table:
         return []
@@ -348,7 +348,7 @@ def get_stock_historical_data(symbol, target_date, days=10):
                     "close": float(item.get("close", 0)),
                     "high": float(item.get("high", 0)),
                     "low": float(item.get("low", 0)),
-                    "turnover": float(item.get("turnover", 0)),
+                    "volume": float(item.get("volume", 0)),
                 }
             )
 
@@ -406,12 +406,12 @@ def check_stock_short_signal(stock_symbol, target_date):
     # Convert stock data format to match index data format expected by check_short_strategy
     current = historical_data[0]
 
-    index_data = {"value": current["close"], "RSI_5": Decimal(str(rsi_5)), "turnover": current["turnover"]}
+    index_data = {"value": current["close"], "RSI_5": Decimal(str(rsi_5)), "volume": current["volume"]}
 
     # Convert historical data format: use 'close' as 'value', 'low' for prev_low check
     strategy_historical_data = []
     for d in historical_data:
-        strategy_historical_data.append({"value": d["close"], "high": d["high"], "low": d["low"], "turnover": d["turnover"], "date": d["date"]})
+        strategy_historical_data.append({"value": d["close"], "high": d["high"], "low": d["low"], "volume": d["volume"], "date": d["date"]})
 
     # Use shared short strategy logic
     strategy_result = check_short_strategy(index_data, strategy_historical_data)

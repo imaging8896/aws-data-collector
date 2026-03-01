@@ -2,7 +2,7 @@
 # • 動能轉強訊號： 收盤價突破前 3 日最高點，且當日漲幅 > 1%。這代表短線整理結束，新的噴出段開始。
 # • RSI 能量積累： 5日 RSI 位於 50 至 65 之間。
 #     ◦ 邏輯： 來源資料顯示當 RSI > 85 時已過度超買 [i]。因此，理想的短線權證進場點是 RSI 剛突破 50（多空分界線）但尚未達到 85 的「動能加速期」。
-# • 量能配合： 當日成交金額（Turnover）大於 5 日平均成交金額，成交量也隨之放大至 8,514 億。
+# • 量能配合： 當日成交量（Volume）大於 5 日平均成交量。
 # 2. 權證專屬：出場與風控條件
 # 短線權證極度依賴「快進快出」以規避時間價值歸零的風險。
 # • 停利條件 (快取利潤)：
@@ -24,12 +24,12 @@ def check_short_strategy(index_data, historical_data):
         {
             'value': current_price,
             'RSI_5': rsi_5_value,
-            'turnover': current_turnover  # 當日成交金額
+            'volume': current_volume  # 當日成交量
         }
-        historical_data: list of dicts containing historical price and turnover data
+        historical_data: list of dicts containing historical price and volume data
         [
-            {'value': price, 'turnover': turnover, 'date': date_str},  # Most recent (today)
-            {'value': price, 'turnover': turnover, 'date': date_str},  # Yesterday
+            {'value': price, 'volume': volume, 'date': date_str},  # Most recent (today)
+            {'value': price, 'volume': volume, 'date': date_str},  # Yesterday
             ...
         ]
 
@@ -42,7 +42,7 @@ def check_short_strategy(index_data, historical_data):
                 'price_breaks_3day_high': bool,
                 'daily_gain_above_1pct': bool,
                 'rsi5_in_range_50_65': bool,
-                'turnover_above_5day_avg': bool,
+                'volume_above_5day_avg': bool,
                 'rsi5_above_85': bool,
                 'price_below_prev_low': bool
             }
@@ -54,7 +54,7 @@ def check_short_strategy(index_data, historical_data):
         # Extract current day values
         current_price = float(index_data.get("value", 0))
         rsi_5 = float(index_data.get("RSI_5", 0))
-        current_turnover = float(index_data.get("turnover", 0))
+        current_volume = float(index_data.get("volume", 0))
 
         # Check if we have historical data
         if not historical_data or len(historical_data) < 5:
@@ -85,10 +85,10 @@ def check_short_strategy(index_data, historical_data):
         # 3. RSI 5 between 50 and 65
         rsi5_in_range_50_65 = 50 <= rsi_5 <= 65
 
-        # 4. Turnover above 5-day average
-        five_day_turnovers = [float(historical_data[i].get("turnover", 0)) for i in range(min(5, len(historical_data)))]
-        avg_5day_turnover = sum(five_day_turnovers) / len(five_day_turnovers) if five_day_turnovers else 0
-        turnover_above_5day_avg = current_turnover > avg_5day_turnover if avg_5day_turnover > 0 else False
+        # 4. Volume above 5-day average
+        five_day_volumes = [float(historical_data[i].get("volume", 0)) for i in range(min(5, len(historical_data)))]
+        avg_5day_volume = sum(five_day_volumes) / len(five_day_volumes) if five_day_volumes else 0
+        volume_above_5day_avg = current_volume > avg_5day_volume if avg_5day_volume > 0 else False
 
         # 5. RSI 5 > 85 (sell signal)
         rsi5_above_85 = rsi_5 > 85
@@ -101,13 +101,13 @@ def check_short_strategy(index_data, historical_data):
             "daily_gain_above_1pct": daily_gain_above_1pct,
             "daily_gain_pct": Decimal(str(round(daily_gain_pct, 2))),
             "rsi5_in_range_50_65": rsi5_in_range_50_65,
-            "turnover_above_5day_avg": turnover_above_5day_avg,
+            "volume_above_5day_avg": volume_above_5day_avg,
             "rsi5_above_85": rsi5_above_85,
             "price_below_prev_low": price_below_prev_low,
         }
 
-        # Buy signal: Price breaks 3-day high AND daily gain > 1% AND RSI 5 in 50-65 range AND turnover above 5-day avg
-        result["buy_signal"] = price_breaks_3day_high and daily_gain_above_1pct and rsi5_in_range_50_65 and turnover_above_5day_avg
+        # Buy signal: Price breaks 3-day high AND daily gain > 1% AND RSI 5 in 50-65 range AND volume above 5-day avg
+        result["buy_signal"] = price_breaks_3day_high and daily_gain_above_1pct and rsi5_in_range_50_65 and volume_above_5day_avg
 
         # Sell signal: RSI 5 > 85 OR price below previous low
         result["sell_signal"] = rsi5_above_85 or price_below_prev_low
