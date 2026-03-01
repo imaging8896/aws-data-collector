@@ -112,8 +112,8 @@ resource "aws_lambda_function" "fetch_market_data" {
   handler          = "main.handler"
   source_code_hash = data.archive_file.lambda_fetch_market_data_zip.output_base64sha256
   runtime          = var.lambda_runtime
-  memory_size      = 128
-  timeout          = 60
+  memory_size      = 256
+  timeout          = 150
   architectures    = ["arm64"]
   layers = [
     aws_lambda_layer_version.fetch_market_data_dependencies_layer.arn,
