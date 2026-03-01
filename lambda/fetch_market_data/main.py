@@ -79,7 +79,7 @@ def handler(event, context):
             # Fetch stock data using yfinance
             # index_names can be stock symbols like ["^TWII", "2330"]
             period = event.get("period", "1mo")
-            get_yf_stock_data(index_names, from_days, period)
+            get_yf_stock_data(index_names, period)
         else:
             raise ValueError(f"Unsupported data_type: {data_type}")
 
@@ -274,7 +274,7 @@ def get_market_stats(data_date: date):
 
 
 @retry_once
-def get_yf_stock_data(symbols: list[str], from_days: int, period: str = "1mo"):
+def get_yf_stock_data(symbols: list[str], period: str = "1mo"):
     """
     Fetch stock data using yfinance and store in DynamoDB.
 
@@ -282,7 +282,6 @@ def get_yf_stock_data(symbols: list[str], from_days: int, period: str = "1mo"):
         symbols: List of stock symbols (e.g., ["tw_index", "2330"])
                  "tw_index" will be converted to "^TWII"
                  Numeric strings will use get_tw_stock_history (tries .TW then .TWO)
-        from_days: Number of days to fetch (used when period is not specified)
         period: yfinance period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max)
     """
     from yf import get_stock_history, get_tw_stock_history
@@ -292,27 +291,13 @@ def get_yf_stock_data(symbols: list[str], from_days: int, period: str = "1mo"):
 
     for symbol_name in symbols:
         print(f"Fetching {symbol_name}...")
-
-        # Calculate date range if using from_days
-        if from_days > 0:
-            end_date = date.today()
-            start_date = end_date - timedelta(days=from_days)
-
-            if symbol_name == "tw_index":
-                data = get_stock_history("^TWII", start_date=start_date, end_date=end_date)
-            elif symbol_name.isdigit():
-                # Use get_tw_stock_history which tries .TW first, then .TWO
-                data = get_tw_stock_history(symbol_name, start_date=start_date, end_date=end_date)
-            else:
-                data = get_stock_history(symbol_name, start_date=start_date, end_date=end_date)
+        if symbol_name == "tw_index":
+            data = get_stock_history("^TWII", period=period)
+        elif symbol_name.isdigit():
+            # Use get_tw_stock_history which tries .TW first, then .TWO
+            data = get_tw_stock_history(symbol_name, period=period)
         else:
-            if symbol_name == "tw_index":
-                data = get_stock_history("^TWII", period=period)
-            elif symbol_name.isdigit():
-                # Use get_tw_stock_history which tries .TW first, then .TWO
-                data = get_tw_stock_history(symbol_name, period=period)
-            else:
-                data = get_stock_history(symbol_name, period=period)
+            data = get_stock_history(symbol_name, period=period)
 
         if not data:
             print(f"No data available for {symbol_name}")

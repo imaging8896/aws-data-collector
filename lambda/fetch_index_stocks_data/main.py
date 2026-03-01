@@ -14,8 +14,8 @@ fetch_market_data_function_name = os.environ["FETCH_MARKET_DATA_FUNCTION_NAME"]
 
 index_stocks_table = dynamodb.Table(index_stocks_table_name)  # type: ignore
 
-# Default period for yfinance (1 year of data)
-DEFAULT_PERIOD = "1y"
+# Default period for yfinance (5 days of data)
+DEFAULT_PERIOD = "5d"
 BATCH_SIZE = 20
 
 
@@ -65,7 +65,7 @@ def fetch_stocks_batch(stock_symbols: list[str], period: str) -> bool:
         period: yfinance period (e.g., "1y", "1mo", "5d")
     """
     try:
-        payload = {"data_type": "yf_stock", "index_names": stock_symbols, "period": period, "from_days": 0}
+        payload = {"data_type": "yf_stock", "index_names": stock_symbols, "period": period}
 
         response = lambda_client.invoke(
             FunctionName=fetch_market_data_function_name,

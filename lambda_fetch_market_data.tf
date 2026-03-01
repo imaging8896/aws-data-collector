@@ -170,9 +170,9 @@ resource "aws_cloudwatch_event_target" "fetch_trades_target" {
   arn       = aws_lambda_function.fetch_market_data.arn
 
   input = jsonencode({
-    data_type   = "trades",
+    data_type   = "yf_stock",
     index_names = ["tw_index", "2330"],
-    from_days   = 7,
+    period      = "5d",
   })
 }
 
