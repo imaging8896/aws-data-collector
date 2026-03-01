@@ -4,12 +4,13 @@ from datetime import date
 from curl_cffi import requests
 
 
-def get_market_stats(data_date: date) -> dict | None:
+def get_market_stats(data_date: date, _retry_count: int = 0) -> dict | None:
     """
     Fetch Taiwan stock market statistics (上漲/下跌/平盤家數) from TWSE.
 
     Args:
         data_date: The date to fetch data for
+        _retry_count: Internal counter for retry attempts (do not set manually)
 
     Returns:
         A dictionary containing market statistics or None if no data available.
@@ -35,8 +36,11 @@ def get_market_stats(data_date: date) -> dict | None:
         return None
 
     if "請重新查詢" in data.get("stat"):
+        if _retry_count >= 3:
+            raise Exception(f"Max retries (3) exceeded for {data_date}: {data.get('stat')}")
+        print(f"Got '請重新查詢', retrying ({_retry_count + 1}/3)...")
         time.sleep(5)  # Wait before retrying
-        return get_market_stats(data_date)
+        return get_market_stats(data_date, _retry_count + 1)
 
     if data.get("stat") != "OK":
         raise Exception(f"API error:\n{data}")
