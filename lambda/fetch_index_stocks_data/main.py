@@ -73,7 +73,7 @@ def fetch_stocks_batch(stock_symbols: list[str], period: str) -> bool:
             Payload=json.dumps(payload),
         )
 
-        return response["StatusCode"] == 202
+        return bool(response["StatusCode"] == 202)
 
     except Exception as e:
         print(f"Error invoking fetch_market_data: {str(e)}")
