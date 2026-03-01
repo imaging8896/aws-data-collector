@@ -65,6 +65,10 @@ lambda_update_index_stocks_layer.zip
 layer_update_index_stocks/
 lambda_notify_discord_function.zip
 lambda_fetch_index_stocks_data_function.zip
+layer_yfinance/
+lambda_yfinance_layer.zip
+layer_numpy/
+lambda_numpy_layer.zip
 lambda/**/*.ttf
 
 # Python cache files

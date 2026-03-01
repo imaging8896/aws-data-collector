@@ -14,8 +14,8 @@ fetch_market_data_function_name = os.environ["FETCH_MARKET_DATA_FUNCTION_NAME"]
 
 index_stocks_table = dynamodb.Table(index_stocks_table_name)  # type: ignore
 
-# RSI needs at least 14 days of data, fetch 30 days to be safe
-DEFAULT_FROM_DAYS = 30
+# Default period for yfinance (5 days of data)
+DEFAULT_PERIOD = "5d"
 BATCH_SIZE = 20
 
 
@@ -56,16 +56,16 @@ def get_all_stock_symbols():
         return []
 
 
-def fetch_stocks_batch(stock_symbols, from_days):
+def fetch_stocks_batch(stock_symbols: list[str], period: str) -> bool:
     """
-    Invoke fetch_market_data Lambda for a batch of stocks
+    Invoke fetch_market_data Lambda for a batch of stocks using yfinance
 
     Args:
         stock_symbols: List of stock symbols (max BATCH_SIZE)
-        from_days: Number of days of historical data to fetch
+        period: yfinance period (e.g., "1y", "1mo", "5d")
     """
     try:
-        payload = {"data_type": "trades", "index_names": stock_symbols, "from_days": from_days}
+        payload = {"data_type": "yf_stock", "index_names": stock_symbols, "period": period}
 
         response = lambda_client.invoke(
             FunctionName=fetch_market_data_function_name,
@@ -73,7 +73,7 @@ def fetch_stocks_batch(stock_symbols, from_days):
             Payload=json.dumps(payload),
         )
 
-        return response["StatusCode"] == 202
+        return bool(response["StatusCode"] == 202)
 
     except Exception as e:
         print(f"Error invoking fetch_market_data: {str(e)}")
@@ -86,14 +86,14 @@ def handler(event, context):
 
     Event format (optional):
     {
-        "from_days": 30  # Number of days of historical data to fetch
+        "period": "1y"  # yfinance period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max)
     }
     """
     try:
-        from_days = event.get("from_days", DEFAULT_FROM_DAYS)
+        period = event.get("period", DEFAULT_PERIOD)
 
         print(f"Starting index stocks data fetch at {datetime.now()}")
-        print(f"Will fetch {from_days} days of historical data")
+        print(f"Will fetch data with period: {period}")
 
         # Get all stock symbols from index_stocks_table
         stock_symbols = get_all_stock_symbols()
@@ -111,7 +111,7 @@ def handler(event, context):
 
             print(f"Invoking batch {batch_num}/{total_batches}: {len(batch)} stocks - {batch}")
 
-            if fetch_stocks_batch(batch, from_days):
+            if fetch_stocks_batch(batch, period):
                 success_count += 1
             else:
                 print(f"Failed to invoke batch {batch_num}")
@@ -124,7 +124,7 @@ def handler(event, context):
                     "total_stocks": len(stock_symbols),
                     "total_batches": total_batches,
                     "success_batches": success_count,
-                    "from_days": from_days,
+                    "period": period,
                 }
             ),
         }
