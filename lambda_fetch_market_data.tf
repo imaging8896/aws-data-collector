@@ -37,73 +37,6 @@ resource "aws_lambda_layer_version" "fetch_market_data_dependencies_layer" {
   depends_on = [terraform_data.install_fetch_market_data_dependencies]
 }
 
-# Layer: NumPy (base dependency for yfinance, separated due to size)
-resource "terraform_data" "install_numpy_layer" {
-  triggers_replace = {
-    version = "1"
-  }
-
-  provisioner "local-exec" {
-    command = <<EOT
-      rm -rf ${path.module}/layer_numpy || true
-      mkdir -p ${path.module}/layer_numpy/python
-      docker run --rm --platform linux/arm64 --entrypoint "" \
-        -v "$(pwd)/${path.module}/layer_numpy/python:/var/task" \
-        public.ecr.aws/lambda/python:${replace(var.lambda_runtime, "python", "")} \
-        bash -c "pip install numpy -t /var/task --upgrade && \
-                 find /var/task -type d -name 'tests' -exec rm -rf {} + 2>/dev/null || true && \
-                 find /var/task -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true && \
-                 find /var/task -name '*.pyc' -delete && \
-                 find /var/task -name '*.pyo' -delete"
-      cd ${path.module}/layer_numpy && zip -r ../lambda_numpy_layer.zip python
-    EOT
-  }
-}
-
-resource "aws_lambda_layer_version" "numpy_layer" {
-  filename                 = "${path.module}/lambda_numpy_layer.zip"
-  layer_name               = "${var.environment}-${var.project_name}-numpy"
-  compatible_runtimes      = [var.lambda_runtime]
-  compatible_architectures = ["arm64"]
-  source_code_hash         = terraform_data.install_numpy_layer.id
-
-  depends_on = [terraform_data.install_numpy_layer]
-}
-
-# Create Lambda Layer with yfinance dependency (excluding numpy)
-resource "terraform_data" "install_yfinance_dependencies" {
-  triggers_replace = {
-    version = "2"
-  }
-
-  provisioner "local-exec" {
-    command = <<EOT
-      rm -rf ${path.module}/layer_yfinance || true
-      mkdir -p ${path.module}/layer_yfinance/python
-      docker run --rm --platform linux/arm64 --entrypoint "" \
-        -v "$(pwd)/${path.module}/layer_yfinance/python:/var/task" \
-        public.ecr.aws/lambda/python:${replace(var.lambda_runtime, "python", "")} \
-        bash -c "pip install yfinance -t /var/task --upgrade && \
-                 rm -rf /var/task/numpy* /var/task/numpy.libs 2>/dev/null || true && \
-                 find /var/task -type d -name 'tests' -exec rm -rf {} + 2>/dev/null || true && \
-                 find /var/task -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true && \
-                 find /var/task -name '*.pyc' -delete && \
-                 find /var/task -name '*.pyo' -delete"
-      cd ${path.module}/layer_yfinance && zip -r ../lambda_yfinance_layer.zip python
-    EOT
-  }
-}
-
-resource "aws_lambda_layer_version" "yfinance_dependencies_layer" {
-  filename                 = "${path.module}/lambda_yfinance_layer.zip"
-  layer_name               = "${var.environment}-${var.project_name}-yfinance-dependencies"
-  compatible_runtimes      = [var.lambda_runtime]
-  compatible_architectures = ["arm64"]
-  source_code_hash         = terraform_data.install_yfinance_dependencies.id
-
-  depends_on = [terraform_data.install_yfinance_dependencies]
-}
-
 # Lambda Function
 resource "aws_lambda_function" "fetch_market_data" {
   filename         = data.archive_file.lambda_fetch_market_data_zip.output_path
@@ -112,14 +45,10 @@ resource "aws_lambda_function" "fetch_market_data" {
   handler          = "main.handler"
   source_code_hash = data.archive_file.lambda_fetch_market_data_zip.output_base64sha256
   runtime          = var.lambda_runtime
-  memory_size      = 256
-  timeout          = 150
+  memory_size      = 128
+  timeout          = 60
   architectures    = ["arm64"]
-  layers = [
-    aws_lambda_layer_version.fetch_market_data_dependencies_layer.arn,
-    aws_lambda_layer_version.numpy_layer.arn,
-    aws_lambda_layer_version.yfinance_dependencies_layer.arn
-  ]
+  layers           = [aws_lambda_layer_version.fetch_market_data_dependencies_layer.arn]
 
   environment {
     variables = {
@@ -170,9 +99,9 @@ resource "aws_cloudwatch_event_target" "fetch_trades_target" {
   arn       = aws_lambda_function.fetch_market_data.arn
 
   input = jsonencode({
-    data_type   = "yf_stock",
+    data_type   = "trades",
     index_names = ["tw_index", "2330"],
-    period      = "5d",
+    from_days   = 7,
   })
 }
 

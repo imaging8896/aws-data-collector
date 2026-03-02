@@ -75,11 +75,6 @@ def handler(event, context):
             get_stock_group_trade(data_date)
         elif data_type == "market_stats":
             get_market_stats(data_date)
-        elif data_type == "yf_stock":
-            # Fetch stock data using yfinance
-            # index_names can be stock symbols like ["^TWII", "2330"]
-            period = event.get("period", "1mo")
-            get_yf_stock_data(index_names, period)
         else:
             raise ValueError(f"Unsupported data_type: {data_type}")
 
@@ -271,56 +266,6 @@ def get_market_stats(data_date: date):
         f"unchanged={data['unchanged']}"
     )
     return data
-
-
-@retry_once
-def get_yf_stock_data(symbols: list[str], period: str = "1mo"):
-    """
-    Fetch stock data using yfinance and store in DynamoDB.
-
-    Args:
-        symbols: List of stock symbols (e.g., ["tw_index", "2330"])
-                 "tw_index" will be converted to "^TWII"
-                 Numeric strings will use get_tw_stock_history (tries .TW then .TWO)
-        period: yfinance period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max)
-    """
-    from cnyes.trade import Index
-    from yf import get_stock_history, get_tw_stock_history
-
-    print(f"Getting yfinance stock data for: {symbols}, period: {period}")
-    now = datetime.now(timezone.utc)
-
-    for symbol_name in symbols:
-        print(f"Fetching {symbol_name}...")
-        if symbol_name == "tw_index":
-            data = get_stock_history("^TWII", period=period)
-        elif symbol_name.isdigit():
-            # Use get_tw_stock_history which tries .TW first, then .TWO
-            data = get_tw_stock_history(symbol_name, period=period)
-        else:
-            data = get_stock_history(symbol_name, period=period)
-
-        if not data:
-            print(f"No data available for {symbol_name}")
-            continue
-
-        # Store each day's data in DynamoDB
-        for day_data in data:
-            market_data_table.put_item(
-                Item={
-                    "symbol": Index.tw_index().symbol if symbol_name == "tw_index" else symbol_name,
-                    "date": day_data["date"],
-                    "open": day_data["open"],
-                    "close": day_data["close"],
-                    "high": day_data["high"],
-                    "low": day_data["low"],
-                    "volume": day_data["volume"],
-                    "source": "yfinance",
-                    "updated_at": int(now.timestamp()),
-                }
-            )
-
-        print(f"Saved {len(data)} data points for {symbol_name} ({symbol_name})")
 
 
 if __name__ == "__main__":

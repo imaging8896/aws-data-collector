@@ -71,7 +71,7 @@ resource "aws_cloudwatch_event_target" "fetch_index_stocks_data_target" {
   arn       = aws_lambda_function.fetch_index_stocks_data.arn
 
   input = jsonencode({
-    period = "1y" # Fetch 1 year of data using yfinance
+    from_days = 30 # Fetch 30 days of data for RSI calculation
   })
 }
 
