@@ -75,6 +75,8 @@ def handler(event, context):
             get_stock_group_trade(data_date)
         elif data_type == "market_stats":
             get_market_stats(data_date)
+        elif data_type == "finmind_index":
+            get_finmind_index(index_names, data_date)
         else:
             raise ValueError(f"Unsupported data_type: {data_type}")
 
@@ -266,6 +268,45 @@ def get_market_stats(data_date: date):
         f"unchanged={data['unchanged']}"
     )
     return data
+
+
+@retry_once
+def get_finmind_index(index_names: list[str], data_date: date):
+    """Fetch and store index data from FinMind API"""
+    from finmind import get_index_data
+
+    print(f"Getting FinMind index data for: {index_names} on {data_date}")
+
+    updated_at = int(datetime.now(timezone.utc).timestamp())
+
+    for index_name in index_names:
+        data = get_index_data(index_name, data_date)
+
+        if not data:
+            print(f"No FinMind data available for {index_name} on {data_date}")
+            continue
+
+        # Save to market_data_table
+        market_data_table.put_item(
+            Item={
+                "symbol": data["symbol"],
+                "date": data["date"],
+                "open": data["open"],
+                "close": data["close"],
+                "high": data["high"],
+                "low": data["low"],
+                "volume": data["volume"],
+                "change": data["change"],
+                "trading_money": data["trading_money"],
+                "trading_turnover": data["trading_turnover"],
+                "updated_at": updated_at,
+            }
+        )
+
+        print(
+            f"Saved FinMind index data for {index_name} on {data_date}: "
+            f"close={data['close']}, volume={data['volume']}"
+        )
 
 
 if __name__ == "__main__":

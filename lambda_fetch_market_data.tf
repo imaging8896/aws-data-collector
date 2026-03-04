@@ -8,10 +8,10 @@ data "archive_file" "lambda_fetch_market_data_zip" {
   excludes    = ["__pycache__"]
 }
 
-# Create Lambda Layer with curl_cffi dependency
+# Create Lambda Layer with curl_cffi and requests dependencies
 resource "terraform_data" "install_fetch_market_data_dependencies" {
   triggers_replace = {
-    version = "1"
+    version = "2"  # Bump version to include requests
   }
 
   provisioner "local-exec" {
@@ -21,7 +21,7 @@ resource "terraform_data" "install_fetch_market_data_dependencies" {
       docker run --rm --platform linux/arm64 --entrypoint "" \
         -v "$(pwd)/${path.module}/layer_fetch_market_data/python:/var/task" \
         public.ecr.aws/lambda/python:${replace(var.lambda_runtime, "python", "")} \
-        pip install curl_cffi -t /var/task --upgrade
+        pip install curl_cffi requests -t /var/task --upgrade
       cd ${path.module}/layer_fetch_market_data && zip -r ../lambda_fetch_market_data_layer.zip python
     EOT
   }
@@ -93,18 +93,6 @@ resource "aws_cloudwatch_event_rule" "fetch_market_data_schedule" {
 }
 
 # EventBridge target
-resource "aws_cloudwatch_event_target" "fetch_trades_target" {
-  rule      = aws_cloudwatch_event_rule.fetch_market_data_schedule.name
-  target_id = "FetchTradesLambda"
-  arn       = aws_lambda_function.fetch_market_data.arn
-
-  input = jsonencode({
-    data_type   = "trades",
-    index_names = ["tw_index", "2330"],
-    from_days   = 7,
-  })
-}
-
 resource "aws_cloudwatch_event_target" "fetch_indexes_target" {
   rule      = aws_cloudwatch_event_rule.fetch_market_data_schedule.name
   target_id = "FetchIndexesLambda"
@@ -122,6 +110,18 @@ resource "aws_cloudwatch_event_target" "fetch_stock_group_trade_target" {
 
   input = jsonencode({
     data_type = "stock_group_trade"
+  })
+}
+
+# Fetch TSE01 index data from FinMind API
+resource "aws_cloudwatch_event_target" "fetch_finmind_index_target" {
+  rule      = aws_cloudwatch_event_rule.fetch_market_data_schedule.name
+  target_id = "FetchFinmindIndexLambda"
+  arn       = aws_lambda_function.fetch_market_data.arn
+
+  input = jsonencode({
+    data_type   = "finmind_index"
+    index_names = ["TSE01"]
   })
 }
 
