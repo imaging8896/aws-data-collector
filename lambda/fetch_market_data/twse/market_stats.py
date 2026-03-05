@@ -16,9 +16,13 @@ def get_market_stats(data_date: date, _retry_count: int = 0) -> dict | None:
         A dictionary containing market statistics or None if no data available.
         Example:
         {
-            "up": 450,         # 上漲家數
-            "down": 350,       # 下跌家數
-            "unchanged": 200,  # 平盤家數
+            "up": 450,           # 上漲家數 (含漲停)
+            "up_limit": 41,      # 漲停家數
+            "down": 350,         # 下跌家數 (含跌停)
+            "down_limit": 3,     # 跌停家數
+            "unchanged": 200,    # 持平家數
+            "untraded": 1,       # 未成交家數
+            "no_comparison": 0,  # 無比價家數
         }
     """
     print(f"Fetching market stats for {data_date}")
@@ -114,9 +118,13 @@ def _parse_market_stats_table(table_data: list) -> dict | None:
             stats["down_limit"] = down_limit
         elif "持平" in row_type:
             stats["unchanged"] = _parse_number(stock_value)
+        elif "未成交" in row_type:
+            stats["untraded"] = _parse_number(stock_value)
+        elif "無比價" in row_type:
+            stats["no_comparison"] = _parse_number(stock_value)
 
     # Verify we have all required fields
-    required_fields = ["up", "up_limit", "down", "down_limit", "unchanged"]
+    required_fields = ["up", "up_limit", "down", "down_limit", "unchanged", "untraded", "no_comparison"]
     if all(field in stats for field in required_fields):
         return stats
 

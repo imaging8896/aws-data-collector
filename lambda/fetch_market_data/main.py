@@ -257,6 +257,8 @@ def get_market_stats(data_date: date):
             "down": data["down"],
             "down_limit": data["down_limit"],
             "unchanged": data["unchanged"],
+            "untraded": data["untraded"],
+            "no_comparison": data["no_comparison"],
             "updated_at": updated_at,
         }
     )
@@ -265,7 +267,7 @@ def get_market_stats(data_date: date):
         f"Saved market stats for {data_date}: "
         f"up={data['up']}, up_limit={data['up_limit']}, "
         f"down={data['down']}, down_limit={data['down_limit']}, "
-        f"unchanged={data['unchanged']}"
+        f"unchanged={data['unchanged']}, untraded={data['untraded']}, no_comparison={data['no_comparison']}"
     )
     return data
 
