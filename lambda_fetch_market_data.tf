@@ -11,7 +11,7 @@ data "archive_file" "lambda_fetch_market_data_zip" {
 # Create Lambda Layer with curl_cffi and requests dependencies
 resource "terraform_data" "install_fetch_market_data_dependencies" {
   triggers_replace = {
-    version = "2"  # Bump version to include requests
+    version = "2" # Bump version to include requests
   }
 
   provisioner "local-exec" {

@@ -160,6 +160,55 @@ def send_discord_notification(index_name, signals, stock_symbols, timestamp):
         return False
 
 
+def send_panic_notification(title: str, description: str, panic_dates: str, timestamp: int) -> bool:
+    """
+    Send panic alert notification to Discord.
+
+    Args:
+        title: Notification title
+        description: Notification description
+        panic_dates: Formatted panic dates list
+        timestamp: Unix timestamp of the notification
+    """
+    webhook_url = get_discord_webhook_url()
+    if not webhook_url:
+        print("Discord webhook URL not configured")
+        return False
+
+    try:
+        # Create Discord embed message for panic alert
+        embed = {
+            "title": title,
+            "description": description,
+            "color": 15158332,  # Red color for panic
+            "fields": [
+                {"name": "📅 恐慌日期", "value": panic_dates, "inline": False},
+                {"name": "⏰ 檢測時間", "value": f"<t:{int(timestamp)}:F>", "inline": True},
+            ],
+            "footer": {"text": "AWS Data Collector - 恐慌訊號監測"},
+        }
+
+        payload = {"embeds": [embed]}
+
+        encoded_data = json.dumps(payload).encode("utf-8")
+
+        response = http.request("POST", webhook_url, body=encoded_data, headers={"Content-Type": "application/json"})
+
+        if response.status == 204:
+            print("Successfully sent panic Discord notification")
+            return True
+        else:
+            print(f"Failed to send panic Discord notification. Status: {response.status}")
+            return False
+
+    except Exception as e:
+        print(f"Error sending panic Discord notification: {str(e)}")
+        import traceback
+
+        traceback.print_exc()
+        return False
+
+
 def handler(event, context):
     """
     Lambda handler for Discord notifications
@@ -177,8 +226,33 @@ def handler(event, context):
         ],
         "timestamp": 1234567890
     }
+
+    Or for panic notifications:
+    {
+        "notification_type": "panic",
+        "title": "🚨 市場恐慌警報",
+        "description": "過去 14 天內偵測到 3 個恐慌日",
+        "panic_dates": "• 2026-03-04: 跌幅 -3.5%\n• 2026-03-02: 爆量 1.5x",
+        "timestamp": 1234567890
+    }
     """
     try:
+        # Check if this is a panic notification
+        notification_type = event.get("notification_type")
+        if notification_type == "panic":
+            title = event.get("title", "🚨 市場恐慌警報")
+            description = event.get("description", "")
+            panic_dates = event.get("panic_dates", "")
+            timestamp = event.get("timestamp", 0)
+
+            success = send_panic_notification(title, description, panic_dates, timestamp)
+
+            return {
+                "statusCode": 200 if success else 500,
+                "body": json.dumps({"message": "Panic notification sent" if success else "Failed to send panic notification"}),
+            }
+
+        # Regular trading signal notification
         index_name = event.get("index_name", "")
         signals = event.get("signals", [])
         stock_symbols = event.get("stock_symbols", [])
