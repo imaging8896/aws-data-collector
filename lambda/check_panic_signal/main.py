@@ -665,6 +665,7 @@ def detect_entry_signals(
 def send_panic_notification(panic_signals: list[PanicSignal]) -> bool:
     """
     Send panic notification via Discord.
+    Shows status of each check condition for all panic days.
 
     Args:
         panic_signals: List of panic signals to notify
@@ -683,40 +684,54 @@ def send_panic_notification(panic_signals: list[PanicSignal]) -> bool:
     try:
         timestamp = int(datetime.now(timezone.utc).timestamp())
 
-        # Build notification message
+        # Build notification message with detailed condition checks
         panic_dates = []
         for signal in panic_signals:
-            signal_types = []
-            if signal["price_panic"]:
-                details = signal["details"]
-                if details.get("daily_change_pct") is not None and details["daily_change_pct"] < PRICE_DROP_THRESHOLD:
-                    signal_types.append(f"跌幅 {details['daily_change_pct']:.2f}%")
-                if details.get("ldr") is not None and details["ldr"] > LDR_THRESHOLD:
-                    signal_types.append(f"跌停比 {details['ldr']:.2f}%")
-            if signal["volume_explosion"]:
-                ratio = signal["details"].get("volume_ratio")
-                if ratio:
-                    signal_types.append(f"爆量 {ratio:.2f}x")
-            if signal["liquidity_drain"]:
-                details = signal["details"]
-                if details.get("ucr") is not None and details["ucr"] < UCR_THRESHOLD:
-                    signal_types.append(f"持平比 {details['ucr']:.2f}%")
-                unchanged = details.get("unchanged")
-                threshold = details.get("unchanged_threshold")
-                if unchanged is not None and threshold is not None and unchanged < threshold:
-                    signal_types.append(f"持平家數 {unchanged} < {threshold:.0f}")
-                if (
-                    details.get("participation_rate") is not None
-                    and details.get("down_ratio") is not None
-                    and details["participation_rate"] > PARTICIPATION_RATE_THRESHOLD
-                    and details["down_ratio"] >= DOWN_RATIO_THRESHOLD
-                ):
-                    signal_types.append(f"參與率 {details['participation_rate']:.1f}% 下跌比 {details['down_ratio']:.1f}%")
+            details = signal["details"]
 
-            signal_text = ", ".join(signal_types) if signal_types else "恐慌訊號"
-            panic_dates.append(f"• **{signal['date']}**: {signal_text}")
+            # Status icons for each condition
+            price_icon = "✅" if signal["price_panic"] else "❌"
+            volume_icon = "✅" if signal["volume_explosion"] else "❌"
+            liquidity_icon = "✅" if signal["liquidity_drain"] else "❌"
 
-        panic_list = "\n".join(panic_dates)
+            # Build price panic details
+            daily_change = details.get("daily_change_pct")
+            ldr = details.get("ldr")
+            price_detail_parts = []
+            if daily_change is not None:
+                price_detail_parts.append(f"跌幅 {daily_change:.2f}% (門檻<{PRICE_DROP_THRESHOLD}%)")
+            if ldr is not None:
+                price_detail_parts.append(f"跌停比 {ldr:.2f}% (門檻>{LDR_THRESHOLD}%)")
+            price_detail = ", ".join(price_detail_parts) if price_detail_parts else "無資料"
+
+            # Build volume explosion details
+            volume_ratio = details.get("volume_ratio")
+            volume_detail = f"量比 {volume_ratio:.2f}x (門檻≥{VOLUME_MULTIPLIER}x)" if volume_ratio is not None else "無資料"
+
+            # Build liquidity drain details
+            ucr = details.get("ucr")
+            unchanged = details.get("unchanged")
+            unchanged_threshold = details.get("unchanged_threshold")
+            participation_rate = details.get("participation_rate")
+            down_ratio = details.get("down_ratio")
+
+            liquidity_detail_parts = []
+            if ucr is not None:
+                liquidity_detail_parts.append(f"持平比 {ucr:.2f}% (門檻<{UCR_THRESHOLD}%)")
+            if unchanged is not None and unchanged_threshold is not None:
+                liquidity_detail_parts.append(f"持平家數 {unchanged} (門檻<{unchanged_threshold:.0f})")
+            if participation_rate is not None and down_ratio is not None:
+                liquidity_detail_parts.append(f"參與率 {participation_rate:.1f}% 下跌比 {down_ratio:.1f}%")
+            liquidity_detail = ", ".join(liquidity_detail_parts) if liquidity_detail_parts else "無資料"
+
+            panic_dates.append(
+                f"• **恐慌日 {signal['date']}**\n"
+                f"  {price_icon} 價格恐慌: {price_detail}\n"
+                f"  {volume_icon} 爆量: {volume_detail}\n"
+                f"  {liquidity_icon} 流動性枯竭: {liquidity_detail}"
+            )
+
+        panic_list = "\n\n".join(panic_dates)
 
         # Invoke Discord notification Lambda
         payload = {
