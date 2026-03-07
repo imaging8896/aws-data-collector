@@ -45,6 +45,10 @@ UCR_THRESHOLD = 1.5  # Unchanged Ratio < 1.5%
 PARTICIPATION_RATE_THRESHOLD = 98.5  # Participation Rate > 98.5%
 DOWN_RATIO_THRESHOLD = 90.0  # Down Ratio >= 90%
 
+# Entry signal thresholds
+BULL_REVERSAL_RATIO_THRESHOLD = 2.0  # 上漲/下跌 > 2
+UP_LIMIT_RATIO_THRESHOLD = 1.5  # 漲停家數佔市場總家數 > 1.5%
+
 
 class PanicSignal(TypedDict):
     """Panic signal data structure."""
@@ -53,6 +57,18 @@ class PanicSignal(TypedDict):
     price_panic: bool
     volume_explosion: bool
     liquidity_drain: bool
+    details: dict
+
+
+class EntrySignal(TypedDict):
+    """Entry signal data structure after panic day."""
+
+    panic_date: str
+    entry_check_date: str
+    close_recovery: bool
+    bull_reversal: bool
+    attack_momentum: bool
+    all_conditions_met: bool
     details: dict
 
 
@@ -438,6 +454,21 @@ def detect_panic_signals(check_date: date) -> list[PanicSignal]:
 
     print(f"Fetched {len(market_data)} market data items, {len(market_stats)} market stats items")
 
+    return detect_panic_signals_with_data(check_date, market_data, market_stats)
+
+
+def detect_panic_signals_with_data(check_date: date, market_data: list[dict], market_stats: list[dict]) -> list[PanicSignal]:
+    """
+    Detect panic signals using pre-fetched data.
+
+    Args:
+        check_date: The date to check from (usually today)
+        market_data: Pre-fetched market data
+        market_stats: Pre-fetched market stats
+
+    Returns:
+        List of panic signals found
+    """
     panic_signals: list[PanicSignal] = []
 
     # Check each day in the lookback period
@@ -469,6 +500,166 @@ def detect_panic_signals(check_date: date) -> list[PanicSignal]:
             print(f"Panic signal detected on {target_date}: {signal}")
 
     return panic_signals
+
+
+def get_next_trading_day(market_data: list[dict], target_date: str) -> str | None:
+    """
+    Get the next trading day after target_date from market data.
+
+    Args:
+        market_data: List of market data items (sorted by date descending)
+        target_date: Target date string (YYYY-MM-DD)
+
+    Returns:
+        Next trading day date string or None if not found
+    """
+    # market_data is sorted descending, so we need to find target_date and get the previous item
+    for i, item in enumerate(market_data):
+        if item["date"] == target_date and i > 0:
+            next_date: str = market_data[i - 1]["date"]
+            return next_date
+    return None
+
+
+def check_entry_conditions(
+    panic_signal: PanicSignal,
+    market_data: list[dict],
+    market_stats: list[dict],
+) -> EntrySignal | None:
+    """
+    Check if entry conditions are met on the day after panic day.
+
+    Entry Conditions:
+    1. Close Recovery: Next day close > Panic day close
+    2. Bull Reversal Ratio: up / down > 2
+    3. Attack Momentum: up_limit > 30
+
+    Args:
+        panic_signal: The panic signal to check
+        market_data: List of market data items
+        market_stats: List of market stats items
+
+    Returns:
+        EntrySignal if all conditions met, None otherwise
+    """
+    panic_date = panic_signal["date"]
+
+    # Find next trading day
+    next_day = get_next_trading_day(market_data, panic_date)
+    if not next_day:
+        print(f"No next trading day found after panic date {panic_date}")
+        return None
+
+    # Get panic day close price
+    panic_close = None
+    for item in market_data:
+        if item["date"] == panic_date:
+            panic_close = decimal_to_float(item.get("close"))
+            break
+
+    if panic_close is None:
+        print(f"No close price found for panic date {panic_date}")
+        return None
+
+    # Get next day data
+    next_day_close = None
+    for item in market_data:
+        if item["date"] == next_day:
+            next_day_close = decimal_to_float(item.get("close"))
+            break
+
+    if next_day_close is None:
+        print(f"No close price found for next day {next_day}")
+        return None
+
+    # Get next day market stats
+    next_day_stats = None
+    for item in market_stats:
+        if item["date"] == next_day:
+            next_day_stats = item
+            break
+
+    if next_day_stats is None:
+        print(f"No market stats found for next day {next_day}")
+        return None
+
+    # Extract stats
+    up = decimal_to_int(next_day_stats.get("up"))
+    down = decimal_to_int(next_day_stats.get("down"))
+    up_limit = decimal_to_int(next_day_stats.get("up_limit"))
+
+    # Check conditions
+    # 1. Close Recovery: next day close > panic day close
+    close_recovery = next_day_close > panic_close
+    close_change_pct = ((next_day_close - panic_close) / panic_close) * 100 if panic_close != 0 else 0
+
+    # 2. Bull Reversal Ratio: up / down > 2
+    bull_reversal_ratio: float = (up / down) if up is not None and down is not None and down > 0 else 0.0
+    bull_reversal = bull_reversal_ratio > BULL_REVERSAL_RATIO_THRESHOLD
+
+    # 3. Attack Momentum: up_limit_ratio > 1.5%
+    total = _calculate_total(next_day_stats)
+    up_limit_ratio: float | None = (up_limit / total) * 100 if up_limit is not None and total is not None and total > 0 else None
+    attack_momentum = up_limit_ratio is not None and up_limit_ratio > UP_LIMIT_RATIO_THRESHOLD
+
+    details = {
+        "panic_close": panic_close,
+        "next_day_close": next_day_close,
+        "close_change_pct": close_change_pct,
+        "up": up,
+        "down": down,
+        "bull_reversal_ratio": bull_reversal_ratio,
+        "up_limit": up_limit,
+        "up_limit_ratio": up_limit_ratio,
+    }
+
+    # All conditions must be met for entry signal
+    all_conditions_met = close_recovery and bull_reversal and attack_momentum
+
+    print(f"Entry check for panic {panic_date} -> next day {next_day}:")
+    print(f"  Close Recovery: {close_recovery} ({panic_close:.2f} -> {next_day_close:.2f}, {close_change_pct:+.2f}%)")
+    print(f"  Bull Reversal: {bull_reversal} (ratio={bull_reversal_ratio:.2f}, up={up}, down={down})")
+    print(f"  Attack Momentum: {attack_momentum} (up_limit_ratio={up_limit_ratio:.2f}% if up_limit_ratio else 'N/A', up_limit={up_limit})")
+    print(f"  All Conditions Met: {all_conditions_met}")
+
+    # Always return the check result (not just when conditions are met)
+    return {
+        "panic_date": panic_date,
+        "entry_check_date": next_day,
+        "close_recovery": close_recovery,
+        "bull_reversal": bull_reversal,
+        "attack_momentum": attack_momentum,
+        "all_conditions_met": all_conditions_met,
+        "details": details,
+    }
+
+
+def detect_entry_signals(
+    panic_signals: list[PanicSignal],
+    market_data: list[dict],
+    market_stats: list[dict],
+) -> list[EntrySignal]:
+    """
+    Detect entry signals for panic days that have next day data.
+
+    Args:
+        panic_signals: List of panic signals
+        market_data: List of market data items
+        market_stats: List of market stats items
+
+    Returns:
+        List of entry signals found
+    """
+    entry_signals: list[EntrySignal] = []
+
+    for panic_signal in panic_signals:
+        entry_signal = check_entry_conditions(panic_signal, market_data, market_stats)
+        if entry_signal:
+            entry_signals.append(entry_signal)
+            status = "✅ 符合進場條件" if entry_signal["all_conditions_met"] else "❌ 不符合進場條件"
+            print(f"Entry check result: {status} - {entry_signal}")
+
+    return entry_signals
 
 
 def send_panic_notification(panic_signals: list[PanicSignal]) -> bool:
@@ -556,14 +747,113 @@ def send_panic_notification(panic_signals: list[PanicSignal]) -> bool:
         return False
 
 
+def send_entry_notification(entry_signals: list[EntrySignal]) -> bool:
+    """
+    Send entry check notification via Discord.
+    Shows status of each entry condition for all panic days.
+
+    Args:
+        entry_signals: List of entry check results to notify
+
+    Returns:
+        True if notification sent successfully
+    """
+    if not discord_notify_function_name:
+        print("Discord notify function not configured")
+        return False
+
+    if not entry_signals:
+        print("No entry signals to notify")
+        return False
+
+    try:
+        timestamp = int(datetime.now(timezone.utc).timestamp())
+
+        # Count signals that meet all conditions
+        met_conditions_count = sum(1 for s in entry_signals if s["all_conditions_met"])
+
+        # Build notification message
+        entry_details = []
+        for signal in entry_signals:
+            details = signal["details"]
+            panic_close = details.get("panic_close", 0)
+            next_day_close = details.get("next_day_close", 0)
+            close_change_pct = details.get("close_change_pct", 0)
+            bull_ratio = details.get("bull_reversal_ratio", 0)
+            up = details.get("up", 0)
+            down = details.get("down", 0)
+            up_limit = details.get("up_limit", 0)
+            up_limit_ratio = details.get("up_limit_ratio", 0)
+
+            # Status icons for each condition
+            close_icon = "✅" if signal["close_recovery"] else "❌"
+            bull_icon = "✅" if signal["bull_reversal"] else "❌"
+            attack_icon = "✅" if signal["attack_momentum"] else "❌"
+
+            # Overall status
+            overall_status = "✅ 符合進場條件" if signal["all_conditions_met"] else "❌ 不符合進場條件"
+
+            entry_details.append(
+                f"• **恐慌日 {signal['panic_date']}** → 反彈日 {signal['entry_check_date']}\n"
+                f"  {overall_status}\n"
+                f"  {close_icon} 收盤站穩: {panic_close:.2f} → {next_day_close:.2f} ({close_change_pct:+.2f}%)\n"
+                f"  {bull_icon} 多頭翻轉比: {bull_ratio:.2f} (上漲{up}/下跌{down}, 門檻>{BULL_REVERSAL_RATIO_THRESHOLD})\n"
+                f"  {attack_icon} 攻擊動能: 漲停 {up_limit} 家 ({up_limit_ratio:.2f}%, 門檻>{UP_LIMIT_RATIO_THRESHOLD}%)"
+            )
+
+        entry_list = "\n\n".join(entry_details)
+
+        # Determine title and description based on conditions met
+        if met_conditions_count > 0:
+            title = "🟢 恐慌反彈買進訊號"
+            description = f"偵測到 {met_conditions_count}/{len(entry_signals)} 個買進進場訊號，建議今日開盤買進！"
+        else:
+            title = "📊 恐慌日反彈檢查報告"
+            description = f"檢查 {len(entry_signals)} 個恐慌日的反彈狀況，目前無符合進場條件"
+
+        # Invoke Discord notification Lambda
+        payload = {
+            "notification_type": "entry",
+            "title": title,
+            "description": description,
+            "entry_details": entry_list,
+            "timestamp": timestamp,
+        }
+
+        response = lambda_client.invoke(
+            FunctionName=discord_notify_function_name,
+            InvocationType="RequestResponse",
+            Payload=json.dumps(payload),
+        )
+
+        response_payload = json.loads(response["Payload"].read().decode("utf-8"))
+        print(f"Discord entry notification response: {response_payload}")
+
+        status_code = response_payload.get("statusCode")
+        return bool(status_code == 200)
+
+    except Exception as e:
+        print(f"Error sending entry notification: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return False
+
+
 def handler(event, context):
     """
-    Lambda handler for checking panic signals.
+    Lambda handler for checking panic signals and entry conditions.
 
     Event format:
     {
         "check_date": "2026-03-06"  # Optional, defaults to today
     }
+
+    Logic:
+    1. Detect panic signals in the past 14 days
+    2. For each panic day, check if next trading day meets entry conditions
+    3. Send panic notification if any panic signals found
+    4. Send entry (buy) notification if entry conditions are met
     """
     try:
         # Parse check date
@@ -577,12 +867,33 @@ def handler(event, context):
 
         print(f"Checking panic signals for date: {check_date}")
 
+        # Calculate date range for data fetching
+        start_date = check_date - timedelta(days=LOOKBACK_DAYS + ZSCORE_LOOKBACK_DAYS + 10)
+        end_date = check_date
+
+        # Fetch data once for both panic and entry detection
+        market_data = get_market_data("TSE01", start_date, end_date)
+        market_stats = get_market_stats(start_date, end_date)
+
+        print(f"Fetched {len(market_data)} market data items, {len(market_stats)} market stats items")
+
         # Detect panic signals
-        panic_signals = detect_panic_signals(check_date)
+        panic_signals = detect_panic_signals_with_data(check_date, market_data, market_stats)
+
+        entry_signals: list[EntrySignal] = []
 
         if panic_signals:
             print(f"Found {len(panic_signals)} panic signals")
             send_panic_notification(panic_signals)
+
+            # Check entry conditions for each panic signal
+            entry_signals = detect_entry_signals(panic_signals, market_data, market_stats)
+
+            if entry_signals:
+                print(f"Found {len(entry_signals)} entry signals")
+                send_entry_notification(entry_signals)
+            else:
+                print("No entry signals detected")
         else:
             print("No panic signals detected")
 
@@ -590,10 +901,12 @@ def handler(event, context):
             "statusCode": 200,
             "body": json.dumps(
                 {
-                    "message": "Panic signal check completed",
+                    "message": "Panic and entry signal check completed",
                     "check_date": check_date.isoformat(),
                     "panic_count": len(panic_signals),
                     "panic_dates": [s["date"] for s in panic_signals],
+                    "entry_count": len(entry_signals),
+                    "entry_dates": [s["entry_check_date"] for s in entry_signals],
                 }
             ),
         }
@@ -614,6 +927,6 @@ if __name__ == "__main__":
     os.environ["MARKET_DATA_TABLE_NAME"] = "dev-aws-data-collector-market-data"
     os.environ["MARKET_STATS_TABLE_NAME"] = "dev-aws-data-collector-market-stats"
 
-    test_event = {"check_date": "2026-03-06"}
+    test_event = {"check_date": "2026-03-07"}
     result = handler(test_event, None)
     print(json.dumps(json.loads(result["body"]), indent=2, ensure_ascii=False))

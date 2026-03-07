@@ -209,6 +209,55 @@ def send_panic_notification(title: str, description: str, panic_dates: str, time
         return False
 
 
+def send_entry_notification(title: str, description: str, entry_details: str, timestamp: int) -> bool:
+    """
+    Send entry (buy) notification to Discord.
+
+    Args:
+        title: Notification title
+        description: Notification description
+        entry_details: Formatted entry signal details
+        timestamp: Unix timestamp of the notification
+    """
+    webhook_url = get_discord_webhook_url()
+    if not webhook_url:
+        print("Discord webhook URL not configured")
+        return False
+
+    try:
+        # Create Discord embed message for entry signal
+        embed = {
+            "title": title,
+            "description": description,
+            "color": 3066993,  # Green color for buy signal
+            "fields": [
+                {"name": "📊 進場條件", "value": entry_details, "inline": False},
+                {"name": "⏰ 通知時間", "value": f"<t:{int(timestamp)}:F>", "inline": True},
+            ],
+            "footer": {"text": "AWS Data Collector - 恐慌反彈買進訊號"},
+        }
+
+        payload = {"embeds": [embed]}
+
+        encoded_data = json.dumps(payload).encode("utf-8")
+
+        response = http.request("POST", webhook_url, body=encoded_data, headers={"Content-Type": "application/json"})
+
+        if response.status == 204:
+            print("Successfully sent entry Discord notification")
+            return True
+        else:
+            print(f"Failed to send entry Discord notification. Status: {response.status}")
+            return False
+
+    except Exception as e:
+        print(f"Error sending entry Discord notification: {str(e)}")
+        import traceback
+
+        traceback.print_exc()
+        return False
+
+
 def handler(event, context):
     """
     Lambda handler for Discord notifications
@@ -235,6 +284,15 @@ def handler(event, context):
         "panic_dates": "• 2026-03-04: 跌幅 -3.5%\n• 2026-03-02: 爆量 1.5x",
         "timestamp": 1234567890
     }
+
+    Or for entry (buy) notifications:
+    {
+        "notification_type": "entry",
+        "title": "🟢 恐慌反彈買進訊號",
+        "description": "偵測到 1 個買進進場訊號",
+        "entry_details": "• 恐慌日 2026-03-04 → 反彈日 2026-03-05\n  收盤站穩: ...",
+        "timestamp": 1234567890
+    }
     """
     try:
         # Check if this is a panic notification
@@ -250,6 +308,20 @@ def handler(event, context):
             return {
                 "statusCode": 200 if success else 500,
                 "body": json.dumps({"message": "Panic notification sent" if success else "Failed to send panic notification"}),
+            }
+
+        # Check if this is an entry notification
+        if notification_type == "entry":
+            title = event.get("title", "🟢 恐慌反彈買進訊號")
+            description = event.get("description", "")
+            entry_details = event.get("entry_details", "")
+            timestamp = event.get("timestamp", 0)
+
+            success = send_entry_notification(title, description, entry_details, timestamp)
+
+            return {
+                "statusCode": 200 if success else 500,
+                "body": json.dumps({"message": "Entry notification sent" if success else "Failed to send entry notification"}),
             }
 
         # Regular trading signal notification
