@@ -721,7 +721,9 @@ def send_panic_notification(panic_signals: list[PanicSignal]) -> bool:
             if unchanged is not None and unchanged_threshold is not None:
                 liquidity_detail_parts.append(f"持平家數 {unchanged} (門檻<{unchanged_threshold:.0f})")
             if participation_rate is not None and down_ratio is not None:
-                liquidity_detail_parts.append(f"參與率 {participation_rate:.1f}% 下跌比 {down_ratio:.1f}%")
+                liquidity_detail_parts.append(
+                    f"參與率 {participation_rate:.1f}% (門檻>{PARTICIPATION_RATE_THRESHOLD}%) 下跌比 {down_ratio:.1f}% (門檻≥{DOWN_RATIO_THRESHOLD}%)"
+                )
             liquidity_detail = ", ".join(liquidity_detail_parts) if liquidity_detail_parts else "無資料"
 
             panic_dates.append(
