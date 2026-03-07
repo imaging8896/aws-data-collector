@@ -8,7 +8,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-import requests
+from curl_cffi import requests
 
 # FinMind API endpoint
 FINMIND_API_URL = "https://api.finmindtrade.com/api/v4/data"
