@@ -305,10 +305,7 @@ def get_finmind_index(index_names: list[str], data_date: date):
             }
         )
 
-        print(
-            f"Saved FinMind index data for {index_name} on {data_date}: "
-            f"close={data['close']}, volume={data['volume']}"
-        )
+        print(f"Saved FinMind index data for {index_name} on {data_date}: close={data['close']}, volume={data['volume']}")
 
 
 if __name__ == "__main__":
