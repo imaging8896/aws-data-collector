@@ -268,8 +268,8 @@ def check_yesterday_is_panic(
     is_panic, details = is_panic_day(yesterday_market_data, yesterday_stats, past_volumes, past_unchanged)
 
     print(
-        f"Yesterday panic check - Price: {details.get('price_panic')}, LDR: {details.get('ldr_panic')}, "
-        f"Volume: {details.get('volume_explosion')}, Liquidity: {details.get('liquidity_drain')}"
+        f"Yesterday panic check - Price Drop: {details.get('has_price_drop')}, High LDR: {details.get('has_high_ldr')}, "
+        f"Price Panic: {details.get('price_panic')}, Volume: {details.get('volume_explosion')}, Liquidity: {details.get('liquidity_drain')}"
     )
     print(f"Yesterday is panic day: {is_panic}")
 
@@ -386,20 +386,6 @@ def check_price_panic(index_data: dict[str, Any]) -> tuple[bool, dict[str, Any]]
     return is_panic, details
 
 
-def check_ldr_panic(market_stats: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
-    """
-    Check if Limit Down Ratio (LDR) panic condition is met.
-
-    Args:
-        market_stats: Real-time market statistics
-
-    Returns:
-        Tuple of (is_panic, details)
-    """
-    is_panic, details = check_ldr_panic_from_stats(market_stats)
-    return is_panic, details
-
-
 def check_volume_explosion(
     index_data: dict[str, Any],
     avg_volume: float | None,
@@ -455,10 +441,10 @@ def check_ultimate_exhaustion(
         Signal details dict if panic detected, None otherwise
     """
     # Check panic conditions
-    price_panic, price_details = check_price_panic(index_data)
-    ldr_panic, ldr_details = check_ldr_panic(market_stats)
+    has_price_drop, price_details = check_price_panic(index_data)
+    has_high_ldr, ldr_details = check_ldr_panic_from_stats(market_stats)
 
-    has_panic = price_panic or ldr_panic
+    price_panic = has_price_drop or has_high_ldr
 
     # Check unchanged ratio
     low_unchanged, unchanged_details = check_unchanged_ratio_condition(market_stats)
@@ -472,8 +458,9 @@ def check_ultimate_exhaustion(
         **ldr_details,
         **unchanged_details,
         **volume_details,
+        "has_price_drop": has_price_drop,
+        "has_high_ldr": has_high_ldr,
         "price_panic": price_panic,
-        "ldr_panic": ldr_panic,
         "low_unchanged": low_unchanged,
         "volume_explosion": volume_explosion,
     }
@@ -485,26 +472,27 @@ def check_ultimate_exhaustion(
     unchanged_ratio = unchanged_details.get("unchanged_ratio")
     volume_ratio_val = volume_details.get("volume_ratio")
 
-    print(f"Price Panic: {price_panic} (drop: {daily_change:.2f}% if daily_change else 'N/A')")
-    print(f"LDR Panic: {ldr_panic} (LDR: {ldr:.2f}% if ldr else 'N/A')")
+    print(f"Price Drop: {has_price_drop} (drop: {daily_change:.2f}% if daily_change else 'N/A')")
+    print(f"High LDR: {has_high_ldr} (LDR: {ldr:.2f}% if ldr else 'N/A')")
+    print(f"Price Panic: {price_panic}")
     print(f"Low Unchanged: {low_unchanged} (ratio: {unchanged_ratio:.2f}% if unchanged_ratio else 'N/A')")
     print(f"Volume Explosion: {volume_explosion} (ratio: {volume_ratio_val:.2f}x if volume_ratio_val else 'N/A')")
 
     # Check if all conditions are met for ultimate exhaustion
-    all_conditions_met = has_panic and low_unchanged and volume_explosion
+    all_conditions_met = price_panic and low_unchanged and volume_explosion
 
     if all_conditions_met:
         print("✅ Ultimate Exhaustion Signal TRIGGERED!")
-    elif has_panic:
+    elif price_panic:
         print("⚠️ Panic day detected, but not all exhaustion conditions met")
     else:
         print("❌ No panic day detected")
 
     # Return result if panic day is detected (regardless of exhaustion conditions)
-    if has_panic:
+    if price_panic:
         return {
             "signal": all_conditions_met,
-            "has_panic": has_panic,
+            "price_panic": price_panic,
             "all_conditions_met": all_conditions_met,
             "date": index_data.get("date"),
             "time": index_data.get("time"),
@@ -533,8 +521,8 @@ def send_ultimate_exhaustion_notification(signal_data: dict[str, Any]) -> bool:
         details = signal_data.get("details", {})
 
         # Build condition status
-        price_icon = "✅" if details.get("price_panic") else "❌"
-        ldr_icon = "✅" if details.get("ldr_panic") else "❌"
+        price_drop_icon = "✅" if details.get("has_price_drop") else "❌"
+        ldr_icon = "✅" if details.get("has_high_ldr") else "❌"
         unchanged_icon = "✅" if details.get("low_unchanged") else "❌"
         volume_icon = "✅" if details.get("volume_explosion") else "❌"
 
@@ -545,10 +533,10 @@ def send_ultimate_exhaustion_notification(signal_data: dict[str, Any]) -> bool:
         current_price = details.get("current_price", 0)
 
         condition_text = (
-            f"{price_icon} 價格恐慌: 跌幅 {daily_change:.2f}% (門檻 < {PRICE_DROP_THRESHOLD}%)"
-            f"{' ← 觸發' if details.get('price_panic') else ''}\n"
+            f"{price_drop_icon} 跌幅恐慌: {daily_change:.2f}% (門檻 < {PRICE_DROP_THRESHOLD}%)"
+            f"{' ← 觸發' if details.get('has_price_drop') else ''}\n"
             f"{ldr_icon} 跌停比: {ldr:.2f}% (門檻 > {LDR_THRESHOLD}%)"
-            f"{' ← 觸發' if details.get('ldr_panic') else ''}\n"
+            f"{' ← 觸發' if details.get('has_high_ldr') else ''}\n"
             f"{unchanged_icon} 持平比例: {unchanged_ratio:.2f}% (門檻 < {UNCHANGED_RATIO_THRESHOLD}%)\n"
             f"{volume_icon} 成交量: {volume_ratio:.2f}x 平均 (門檻 > {VOLUME_MULTIPLIER_THRESHOLD}x)"
         )

@@ -244,7 +244,7 @@ def detect_panic_signals_with_data(check_date: date, market_data: list[dict], ma
             # Map details to PanicSignal format
             signal: PanicSignal = {
                 "date": target_date,
-                "price_panic": details.get("price_panic", False) or details.get("ldr_panic", False),
+                "price_panic": details.get("price_panic", False),
                 "volume_explosion": details.get("volume_explosion", False),
                 "liquidity_drain": details.get("liquidity_drain", False),
                 "details": details,

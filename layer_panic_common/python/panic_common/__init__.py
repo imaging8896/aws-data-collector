@@ -235,7 +235,6 @@ def is_panic_day(
     """
     details: dict[str, Any] = {
         "price_panic": False,
-        "ldr_panic": False,
         "volume_explosion": False,
         "liquidity_drain": False,
     }
@@ -249,14 +248,19 @@ def is_panic_day(
         if prev_close != 0:
             daily_change_pct = (change / prev_close) * 100
 
-    price_panic, price_details = check_price_panic_from_change(daily_change_pct)
-    details["price_panic"] = price_panic
+    # Check price drop condition
+    has_price_drop, price_details = check_price_panic_from_change(daily_change_pct)
+    details["has_price_drop"] = has_price_drop
     details["daily_change_pct"] = price_details.get("daily_change_pct")
 
-    # Check LDR panic
-    ldr_panic, ldr_details = check_ldr_panic_from_stats(market_stats_item)
-    details["ldr_panic"] = ldr_panic
+    # Check LDR condition
+    has_high_ldr, ldr_details = check_ldr_panic_from_stats(market_stats_item)
+    details["has_high_ldr"] = has_high_ldr
     details["ldr"] = ldr_details.get("ldr")
+
+    # Price panic = price_drop OR high_ldr
+    price_panic = has_price_drop or has_high_ldr
+    details["price_panic"] = price_panic
 
     # Check volume explosion
     volume_explosion = False
@@ -321,7 +325,7 @@ def is_panic_day(
     liquidity_drain = has_low_ucr or has_extreme_unchanged or has_extreme_participation
     details["liquidity_drain"] = liquidity_drain
 
-    # Panic day requires: (price_panic OR ldr_panic) AND volume_explosion AND liquidity_drain
-    is_panic = (price_panic or ldr_panic) and volume_explosion and liquidity_drain
+    # Panic day requires: price_panic AND volume_explosion AND liquidity_drain
+    is_panic = price_panic and volume_explosion and liquidity_drain
 
     return is_panic, details
