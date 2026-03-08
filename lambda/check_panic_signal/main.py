@@ -13,25 +13,21 @@ Panic Day Definition:
 
 import json
 import os
-import statistics
 from datetime import date, datetime, timedelta, timezone
 from typing import TypedDict
 
 import boto3
 from panic_common import (
-    DOWN_RATIO_THRESHOLD,
+    BULL_REVERSAL_RATIO_THRESHOLD,
     LDR_THRESHOLD,
-    PARTICIPATION_RATE_THRESHOLD,
     PRICE_DROP_THRESHOLD,
     UCR_THRESHOLD,
     UP_LIMIT_RATIO_THRESHOLD,
     VOLUME_MULTIPLIER,
     calculate_total,
-    check_ldr_panic_from_stats,
-    check_price_panic_from_change,
-    check_unchanged_ratio,
     decimal_to_float,
     decimal_to_int,
+    is_panic_day,
 )
 
 # Initialize AWS clients
@@ -51,9 +47,6 @@ LOOKBACK_DAYS = 14  # Check for panic in past 14 days
 VOLUME_AVG_DAYS = 10  # Average volume calculation period
 ZSCORE_LOOKBACK_DAYS = 60  # Z-score calculation period
 SUPER_PANIC_LOOKBACK_DAYS = 5  # Check for super panic in past 5 trading days
-
-# Entry signal thresholds
-BULL_REVERSAL_RATIO_THRESHOLD = 2.0  # 上漲/下跌 > 2
 
 
 class PanicSignal(TypedDict):
@@ -165,248 +158,6 @@ def get_market_stats(start_date: date, end_date: date) -> list[dict]:
         return []
 
 
-def calculate_daily_change_pct(market_data: list[dict], target_date: str) -> float | None:
-    """
-    Calculate daily price change percentage for a given date.
-
-    Args:
-        market_data: List of market data items (sorted by date descending)
-        target_date: Target date string (YYYY-MM-DD)
-
-    Returns:
-        Daily change percentage or None if not available
-    """
-    for item in market_data:
-        if item["date"] == target_date:
-            close = decimal_to_float(item.get("close"))
-            change = decimal_to_float(item.get("change"))
-
-            if close is not None and change is not None and close != 0:
-                # change is the absolute change, calculate percentage
-                prev_close = close - change
-                if prev_close != 0:
-                    return float((change / prev_close) * 100)
-            return None
-    return None
-
-
-def calculate_volume_ratio(market_data: list[dict], target_date: str) -> float | None:
-    """
-    Calculate volume ratio compared to past 10-day average.
-
-    Args:
-        market_data: List of market data items (sorted by date descending)
-        target_date: Target date string (YYYY-MM-DD)
-
-    Returns:
-        Volume ratio (current / average) or None if not available
-    """
-    # Find the target date index
-    target_idx = None
-    for i, item in enumerate(market_data):
-        if item["date"] == target_date:
-            target_idx = i
-            break
-
-    if target_idx is None:
-        return None
-
-    current_volume = decimal_to_float(market_data[target_idx].get("volume"))
-    if current_volume is None:
-        return None
-
-    # Get past 10 days volumes (excluding current day)
-    past_volumes = []
-    for i in range(target_idx + 1, min(target_idx + 1 + VOLUME_AVG_DAYS, len(market_data))):
-        vol = decimal_to_float(market_data[i].get("volume"))
-        if vol is not None:
-            past_volumes.append(vol)
-
-    if len(past_volumes) < 5:  # Need at least 5 days for meaningful average
-        return None
-
-    avg_volume = sum(past_volumes) / len(past_volumes)
-    if avg_volume == 0:
-        return None
-
-    return float(current_volume / avg_volume)
-
-
-def calculate_unchanged_threshold(market_stats: list[dict], target_date: str) -> tuple[int | None, float | None]:
-    """
-    Calculate unchanged value and threshold (avg - 2*std) based on past 60 days.
-
-    Args:
-        market_stats: List of market stats items (sorted by date descending)
-        target_date: Target date string (YYYY-MM-DD)
-
-    Returns:
-        Tuple of (current_unchanged, threshold) or (None, None) if not available
-        Threshold = avg - 2*std of past 60 days unchanged values
-    """
-    # Find target date index
-    target_idx = None
-    for i, item in enumerate(market_stats):
-        if item["date"] == target_date:
-            target_idx = i
-            break
-
-    if target_idx is None:
-        return None, None
-
-    current_unchanged = decimal_to_int(market_stats[target_idx].get("unchanged"))
-    if current_unchanged is None:
-        return None, None
-
-    # Get past 60 days unchanged values (excluding current day)
-    past_unchanged = []
-    for i in range(target_idx + 1, min(target_idx + 1 + ZSCORE_LOOKBACK_DAYS, len(market_stats))):
-        val = decimal_to_int(market_stats[i].get("unchanged"))
-        if val is not None:
-            past_unchanged.append(val)
-
-    if len(past_unchanged) < 30:  # Need at least 30 days for meaningful calculation
-        return current_unchanged, None
-
-    mean = statistics.mean(past_unchanged)
-    stdev = statistics.stdev(past_unchanged)
-
-    # Threshold = avg - 2*std
-    threshold = mean - 2 * stdev
-
-    return current_unchanged, threshold
-
-
-def check_price_panic(market_data: list[dict], market_stats: list[dict], target_date: str) -> tuple[bool, dict]:
-    """
-    Check for price panic signal.
-
-    Price Panic: Daily drop > 2.5% OR LDR > 3%
-
-    Args:
-        market_data: List of market data items
-        market_stats: List of market stats items
-        target_date: Target date string
-
-    Returns:
-        Tuple of (is_panic, details)
-        details includes: daily_change_pct, ldr, has_price_drop, has_high_ldr
-    """
-    details: dict = {}
-
-    # Check daily drop using shared function
-    daily_change = calculate_daily_change_pct(market_data, target_date)
-    has_price_drop, price_details = check_price_panic_from_change(daily_change)
-    details["daily_change_pct"] = price_details.get("daily_change_pct")
-    details["has_price_drop"] = has_price_drop  # Record condition result
-
-    # Check LDR (Limit Down Ratio) using shared function
-    target_stats = None
-    for item in market_stats:
-        if item["date"] == target_date:
-            target_stats = item
-            break
-
-    has_high_ldr = False
-    if target_stats:
-        has_high_ldr, ldr_details = check_ldr_panic_from_stats(target_stats)
-        details["ldr"] = ldr_details.get("ldr")
-    else:
-        details["ldr"] = None
-    details["has_high_ldr"] = has_high_ldr  # Record condition result
-
-    return (has_price_drop or has_high_ldr), details
-
-
-def check_volume_explosion(market_data: list[dict], target_date: str) -> tuple[bool, dict]:
-    """
-    Check for volume explosion signal.
-
-    Volume Explosion: Volume >= 1.25 * avg volume (past 10 days)
-
-    Args:
-        market_data: List of market data items
-        target_date: Target date string
-
-    Returns:
-        Tuple of (is_explosion, details)
-    """
-    volume_ratio = calculate_volume_ratio(market_data, target_date)
-    details = {"volume_ratio": volume_ratio}
-
-    is_explosion = volume_ratio is not None and volume_ratio >= VOLUME_MULTIPLIER
-
-    return is_explosion, details
-
-
-def check_liquidity_drain(market_stats: list[dict], target_date: str) -> tuple[bool, dict]:
-    """
-    Check for liquidity drain signal.
-
-    Liquidity Drain:
-    - unchanged z-score (past 60 days) is extreme (< -2) OR
-    - UCR < 1.5% OR
-    - (Participation Rate > 98.5% AND Down Ratio >= 90%)
-
-    Args:
-        market_stats: List of market stats items
-        target_date: Target date string
-
-    Returns:
-        Tuple of (is_drain, details)
-    """
-    details: dict = {}
-
-    # Find target date data
-    target_data = None
-    for item in market_stats:
-        if item["date"] == target_date:
-            target_data = item
-            break
-
-    if target_data is None:
-        return False, details
-
-    down = decimal_to_int(target_data.get("down"))
-    untraded = decimal_to_int(target_data.get("untraded"))
-    total = calculate_total(target_data)
-
-    # Check UCR (Unchanged Ratio) using shared function
-    has_low_ucr, ucr_details = check_unchanged_ratio(target_data)
-    details["ucr"] = ucr_details.get("unchanged_ratio")
-
-    # Calculate participation rate
-    participation_rate = None
-    if total is not None and untraded is not None and total > 0:
-        participation_rate = ((total - untraded) / total) * 100
-    details["participation_rate"] = participation_rate
-
-    # Calculate down ratio
-    down_ratio = None
-    if down is not None and total is not None and total > 0:
-        down_ratio = (down / total) * 100
-    details["down_ratio"] = down_ratio
-
-    # Calculate unchanged threshold (avg - 2*std)
-    current_unchanged, unchanged_threshold = calculate_unchanged_threshold(market_stats, target_date)
-    details["unchanged"] = current_unchanged
-    details["unchanged_threshold"] = unchanged_threshold
-
-    # Check conditions
-    # unchanged < avg - 2*std (i.e., current value is below threshold)
-    has_extreme_unchanged = current_unchanged is not None and unchanged_threshold is not None and current_unchanged < unchanged_threshold
-    has_extreme_participation = (
-        participation_rate is not None and down_ratio is not None and participation_rate > PARTICIPATION_RATE_THRESHOLD and down_ratio >= DOWN_RATIO_THRESHOLD
-    )
-
-    # Record condition results for notification formatting
-    details["has_extreme_unchanged"] = has_extreme_unchanged
-    details["has_low_ucr"] = has_low_ucr
-    details["has_extreme_participation"] = has_extreme_participation
-
-    return (has_extreme_unchanged or has_low_ucr or has_extreme_participation), details
-
-
 def detect_panic_signals(check_date: date) -> list[PanicSignal]:
     """
     Detect panic signals in the past 14 days from check_date.
@@ -449,26 +200,54 @@ def detect_panic_signals_with_data(check_date: date, market_data: list[dict], ma
     for i in range(LOOKBACK_DAYS):
         target_date = (check_date - timedelta(days=i)).isoformat()
 
+        # Find target date's market data and stats
+        target_market_data = None
+        target_idx = None
+        for idx, item in enumerate(market_data):
+            if item["date"] == target_date:
+                target_market_data = item
+                target_idx = idx
+                break
+
+        target_stats = None
+        target_stats_idx = None
+        for idx, item in enumerate(market_stats):
+            if item["date"] == target_date:
+                target_stats = item
+                target_stats_idx = idx
+                break
+
         # Skip if no data for this date
-        if not any(item["date"] == target_date for item in market_stats):
+        if not target_market_data or not target_stats:
             continue
 
-        price_panic, price_details = check_price_panic(market_data, market_stats, target_date)
-        volume_explosion, volume_details = check_volume_explosion(market_data, target_date)
-        liquidity_drain, liquidity_details = check_liquidity_drain(market_stats, target_date)
+        # Get past volumes for average calculation (past 10 days)
+        past_volumes: list[int | float] = []
+        if target_idx is not None:
+            for item in market_data[target_idx + 1 : target_idx + 1 + VOLUME_AVG_DAYS]:
+                vol = decimal_to_int(item.get("volume"))
+                if vol:
+                    past_volumes.append(vol)
 
-        # A panic day requires all three conditions
-        if price_panic and volume_explosion and liquidity_drain:
+        # Get past unchanged values for z-score calculation (past 60 days)
+        past_unchanged: list[int] = []
+        if target_stats_idx is not None:
+            for item in market_stats[target_stats_idx + 1 : target_stats_idx + 1 + ZSCORE_LOOKBACK_DAYS]:
+                unch = decimal_to_int(item.get("unchanged"))
+                if unch is not None:
+                    past_unchanged.append(unch)
+
+        # Use shared is_panic_day function
+        is_panic, details = is_panic_day(target_market_data, target_stats, past_volumes, past_unchanged)
+
+        if is_panic:
+            # Map details to PanicSignal format
             signal: PanicSignal = {
                 "date": target_date,
-                "price_panic": price_panic,
-                "volume_explosion": volume_explosion,
-                "liquidity_drain": liquidity_drain,
-                "details": {
-                    **price_details,
-                    **volume_details,
-                    **liquidity_details,
-                },
+                "price_panic": details.get("price_panic", False) or details.get("ldr_panic", False),
+                "volume_explosion": details.get("volume_explosion", False),
+                "liquidity_drain": details.get("liquidity_drain", False),
+                "details": details,
             }
             panic_signals.append(signal)
             print(f"Panic signal detected on {target_date}: {signal}")

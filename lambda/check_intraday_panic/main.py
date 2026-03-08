@@ -257,8 +257,15 @@ def check_yesterday_is_panic(
         if vol:
             past_volumes.append(vol)
 
+    # Get past unchanged values for z-score calculation (exclude yesterday)
+    past_unchanged: list[int] = []
+    for item in market_stats[1:61]:  # Past 60 days
+        unch = decimal_to_int(item.get("unchanged"))
+        if unch is not None:
+            past_unchanged.append(unch)
+
     # Use shared is_panic_day function
-    is_panic, details = is_panic_day(yesterday_market_data, yesterday_stats, past_volumes)
+    is_panic, details = is_panic_day(yesterday_market_data, yesterday_stats, past_volumes, past_unchanged)
 
     print(
         f"Yesterday panic check - Price: {details.get('price_panic')}, LDR: {details.get('ldr_panic')}, "

@@ -211,6 +211,7 @@ def is_panic_day(
     market_data_item: dict[str, Any],
     market_stats_item: dict[str, Any],
     past_volumes: list[int | float],
+    past_unchanged: list[int] | None = None,
 ) -> tuple[bool, dict[str, Any]]:
     """
     Check if a given day is a panic day.
@@ -218,12 +219,16 @@ def is_panic_day(
     Panic Day Definition:
     1. Price Panic: Daily drop > 2.5% OR LDR > 3%
     2. Volume Explosion: Volume >= 1.25x average
-    3. Liquidity Drain: UCR < 1.5%
+    3. Liquidity Drain:
+       - unchanged z-score < -2 (unchanged < avg - 2*std) OR
+       - UCR < 1.5% OR
+       - (Participation Rate > 98.5% AND Down Ratio >= 90%)
 
     Args:
         market_data_item: Market data for the target day (must have 'close', 'change', 'volume')
         market_stats_item: Market stats for the target day
         past_volumes: List of volumes from past days for average calculation
+        past_unchanged: List of unchanged values from past 60 days for z-score calculation (optional)
 
     Returns:
         Tuple of (is_panic, details)
@@ -268,17 +273,53 @@ def is_panic_day(
 
     details["volume_explosion"] = volume_explosion
 
-    # Check liquidity drain (using UCR threshold)
+    # Check liquidity drain
+    # Condition 1: UCR < 1.5%
     unchanged = decimal_to_int(market_stats_item.get("unchanged"))
     total = calculate_total(market_stats_item)
-    liquidity_drain = False
     ucr = None
+    has_low_ucr = False
     if unchanged is not None and total is not None and total > 0:
         ucr = (unchanged / total) * 100
-        liquidity_drain = ucr < UCR_THRESHOLD
-
-    details["liquidity_drain"] = liquidity_drain
+        has_low_ucr = ucr < UCR_THRESHOLD
     details["ucr"] = ucr
+    details["has_low_ucr"] = has_low_ucr
+
+    # Condition 2: unchanged z-score < -2 (unchanged < avg - 2*std)
+    has_extreme_unchanged = False
+    unchanged_threshold = None
+    if past_unchanged and len(past_unchanged) >= 30 and unchanged is not None:
+        import statistics
+
+        mean = statistics.mean(past_unchanged)
+        stdev = statistics.stdev(past_unchanged)
+        unchanged_threshold = mean - 2 * stdev
+        has_extreme_unchanged = unchanged < unchanged_threshold
+    details["unchanged"] = unchanged
+    details["unchanged_threshold"] = unchanged_threshold
+    details["has_extreme_unchanged"] = has_extreme_unchanged
+
+    # Condition 3: Participation Rate > 98.5% AND Down Ratio >= 90%
+    down = decimal_to_int(market_stats_item.get("down"))
+    untraded = decimal_to_int(market_stats_item.get("untraded"))
+    participation_rate = None
+    down_ratio = None
+    has_extreme_participation = False
+
+    if total is not None and untraded is not None and total > 0:
+        participation_rate = ((total - untraded) / total) * 100
+    if down is not None and total is not None and total > 0:
+        down_ratio = (down / total) * 100
+    if participation_rate is not None and down_ratio is not None:
+        has_extreme_participation = participation_rate > PARTICIPATION_RATE_THRESHOLD and down_ratio >= DOWN_RATIO_THRESHOLD
+
+    details["participation_rate"] = participation_rate
+    details["down_ratio"] = down_ratio
+    details["has_extreme_participation"] = has_extreme_participation
+
+    # Liquidity drain: any of the three conditions
+    liquidity_drain = has_low_ucr or has_extreme_unchanged or has_extreme_participation
+    details["liquidity_drain"] = liquidity_drain
 
     # Panic day requires: (price_panic OR ldr_panic) AND volume_explosion AND liquidity_drain
     is_panic = (price_panic or ldr_panic) and volume_explosion and liquidity_drain
