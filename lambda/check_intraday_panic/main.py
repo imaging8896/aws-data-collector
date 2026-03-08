@@ -355,18 +355,19 @@ def send_ultimate_exhaustion_notification(signal_data: dict[str, Any]) -> bool:
         all_conditions_met = signal_data.get("all_conditions_met", False)
 
         if all_conditions_met:
-            title = "🔥 終極竞盡買入訊號"
+            title = "🔥 終極竭盡買入訊號"
             description = (
-                f"盤中 **{signal_data.get('time', '')}** 偵測到終極竞盡訊號！\n"
+                f"盤中 **{signal_data.get('time', '')}** 偵測到終極竭盡訊號！\n"
                 f"目前指數: **{current_price:.2f}** (跌幅 {daily_change:.2f}%)\n\n"
-                "市場極度恐慌賣壓竞盡，可考慮進場買入。"
+                "市場極度恐慌賣壓竭盡，可考慮進場買入。\n\n"
+                "💰 **請加碼 30%**"
             )
         else:
-            title = "🚨 盤中恐慌日竞盡檢查報告"
+            title = "🚨 盤中恐慌日竭盡檢查報告"
             description = (
                 f"盤中 **{signal_data.get('time', '')}** 偵測到恐慌日\n"
                 f"目前指數: **{current_price:.2f}** (跌幅 {daily_change:.2f}%)\n\n"
-                "❌ 竞盡條件尚未完全符合，請繼續觀察。"
+                "❌ 竭盡條件尚未完全符合，請繼續觀察。"
             )
 
         # Invoke Discord notification Lambda
