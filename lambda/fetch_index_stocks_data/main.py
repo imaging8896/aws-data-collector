@@ -14,8 +14,8 @@ fetch_market_data_function_name = os.environ["FETCH_MARKET_DATA_FUNCTION_NAME"]
 
 index_stocks_table = dynamodb.Table(index_stocks_table_name)  # type: ignore
 
-# RSI needs at least 14 days of data, fetch 30 days to be safe
-DEFAULT_FROM_DAYS = 30
+# Default number of days for historical data (1 year for RSI and MA calculations)
+DEFAULT_FROM_DAYS = 365
 BATCH_SIZE = 20
 
 

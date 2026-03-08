@@ -12,15 +12,11 @@ This signal indicates extreme market selling exhaustion - a potential bottom.
 
 import json
 import os
-import sys
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
 import boto3
-
-# Add parent directory to path for importing panic_common
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from panic_common import (
     LDR_THRESHOLD,
@@ -341,13 +337,7 @@ def fetch_realtime_data() -> tuple[dict[str, Any] | None, dict[str, int] | None]
     Returns:
         Tuple of (index_data, market_stats) or (None, None) if failed
     """
-    # Import here to avoid circular imports in Lambda
-    try:
-        from twse.realtime import get_realtime_index, get_realtime_market_stats
-    except ImportError:
-        # For local testing, try relative import
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "fetch_market_data"))
-        from twse.realtime import get_realtime_index, get_realtime_market_stats
+    from twse.realtime import get_realtime_index, get_realtime_market_stats
 
     try:
         index_data = get_realtime_index("TSE01")
