@@ -20,7 +20,10 @@ from typing import TypedDict
 import boto3
 from panic_common import (
     DOWN_RATIO_THRESHOLD,
+    LDR_THRESHOLD,
     PARTICIPATION_RATE_THRESHOLD,
+    PRICE_DROP_THRESHOLD,
+    UCR_THRESHOLD,
     UP_LIMIT_RATIO_THRESHOLD,
     VOLUME_MULTIPLIER,
     calculate_total,
@@ -692,10 +695,13 @@ def send_panic_notification(panic_signals: list[PanicSignal]) -> bool:
             down_ratio_str = f"{down_ratio:.1f}%" if down_ratio is not None else "N/A"
 
             # Build detailed condition text
-            price_line = f"  {price_icon} 價格恐慌: {price_drop_icon} 跌幅 {price_drop_str} (門檻<-2.5%) | {ldr_icon} 跌停比 {ldr_str} (門檻>3%)"
-            volume_line = f"  {volume_icon} 爆量: {volume_str} (門檻≥1.25x)"
+            price_line = (
+                f"  {price_icon} 價格恐慌: {price_drop_icon} 跌幅 {price_drop_str} (門檻<{PRICE_DROP_THRESHOLD}%) | "
+                f"{ldr_icon} 跌停比 {ldr_str} (門檻>{LDR_THRESHOLD}%)"
+            )
+            volume_line = f"  {volume_icon} 爆量: {volume_str} (門檻≥{VOLUME_MULTIPLIER}x)"
             liquidity_line = (
-                f"  {liquidity_icon} 流動性枯竭: {ucr_icon} 持平比 {ucr_str} (門檻<1.5%) | "
+                f"  {liquidity_icon} 流動性枯竭: {ucr_icon} 持平比 {ucr_str} (門檻<{UCR_THRESHOLD}%) | "
                 f"{unchanged_icon} 持平家數 {unchanged_str} < {unchanged_threshold_str} | "
                 f"{participation_icon} 參與率 {participation_str} 下跌比 {down_ratio_str}"
             )
