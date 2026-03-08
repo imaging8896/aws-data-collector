@@ -15,10 +15,21 @@ import json
 import os
 import statistics
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
 from typing import TypedDict
 
 import boto3
+from panic_common import (
+    DOWN_RATIO_THRESHOLD,
+    LDR_THRESHOLD,
+    PARTICIPATION_RATE_THRESHOLD,
+    PRICE_DROP_THRESHOLD,
+    UCR_THRESHOLD,
+    UP_LIMIT_RATIO_THRESHOLD,
+    VOLUME_MULTIPLIER,
+    calculate_total,
+    decimal_to_float,
+    decimal_to_int,
+)
 
 # Initialize AWS clients
 dynamodb = boto3.resource("dynamodb")
@@ -37,17 +48,8 @@ LOOKBACK_DAYS = 14  # Check for panic in past 14 days
 VOLUME_AVG_DAYS = 10  # Average volume calculation period
 ZSCORE_LOOKBACK_DAYS = 60  # Z-score calculation period
 
-# Panic thresholds
-PRICE_DROP_THRESHOLD = -2.5  # Daily drop > 2.5%
-LDR_THRESHOLD = 3.0  # Limit Down Ratio > 3%
-VOLUME_MULTIPLIER = 1.25  # Volume >= 1.25x average
-UCR_THRESHOLD = 1.5  # Unchanged Ratio < 1.5%
-PARTICIPATION_RATE_THRESHOLD = 98.5  # Participation Rate > 98.5%
-DOWN_RATIO_THRESHOLD = 90.0  # Down Ratio >= 90%
-
 # Entry signal thresholds
 BULL_REVERSAL_RATIO_THRESHOLD = 2.0  # 上漲/下跌 > 2
-UP_LIMIT_RATIO_THRESHOLD = 1.5  # 漲停家數佔市場總家數 > 1.5%
 
 
 class PanicSignal(TypedDict):
@@ -70,41 +72,6 @@ class EntrySignal(TypedDict):
     attack_momentum: bool
     all_conditions_met: bool
     details: dict
-
-
-def decimal_to_float(value: Decimal | float | int | None) -> float | None:
-    """Convert Decimal to float for calculations."""
-    if value is None:
-        return None
-    return float(value)
-
-
-def decimal_to_int(value: Decimal | float | int | None) -> int | None:
-    """Convert Decimal to int for calculations."""
-    if value is None:
-        return None
-    return int(value)
-
-
-def _calculate_total(item: dict) -> int | None:
-    """
-    Calculate total from market stats item.
-
-    total = up + down + unchanged + untraded + no_comparison
-
-    """
-
-    # Calculate from components
-    up = decimal_to_int(item.get("up"))
-    down = decimal_to_int(item.get("down"))
-    unchanged = decimal_to_int(item.get("unchanged"))
-    untraded = decimal_to_int(item.get("untraded"))
-    no_comparison = decimal_to_int(item.get("no_comparison"))
-
-    if up is not None and down is not None and unchanged is not None and untraded is not None and no_comparison is not None:
-        return up + down + unchanged + untraded + no_comparison
-
-    return None
 
 
 def get_market_data(symbol: str, start_date: date, end_date: date) -> list[dict]:
@@ -214,7 +181,7 @@ def calculate_daily_change_pct(market_data: list[dict], target_date: str) -> flo
                 # change is the absolute change, calculate percentage
                 prev_close = close - change
                 if prev_close != 0:
-                    return (change / prev_close) * 100
+                    return float((change / prev_close) * 100)
             return None
     return None
 
@@ -258,7 +225,7 @@ def calculate_volume_ratio(market_data: list[dict], target_date: str) -> float |
     if avg_volume == 0:
         return None
 
-    return current_volume / avg_volume
+    return float(current_volume / avg_volume)
 
 
 def calculate_unchanged_threshold(market_stats: list[dict], target_date: str) -> tuple[int | None, float | None]:
@@ -333,7 +300,7 @@ def check_price_panic(market_data: list[dict], market_stats: list[dict], target_
     for item in market_stats:
         if item["date"] == target_date:
             down_limit = decimal_to_int(item.get("down_limit"))
-            total = _calculate_total(item)
+            total = calculate_total(item)
 
             if down_limit is not None and total is not None and total > 0:
                 ldr = (down_limit / total) * 100
@@ -395,12 +362,12 @@ def check_liquidity_drain(market_stats: list[dict], target_date: str) -> tuple[b
         return False, details
 
     unchanged = decimal_to_int(target_data.get("unchanged"))
-    total = _calculate_total(target_data)
     down = decimal_to_int(target_data.get("down"))
     untraded = decimal_to_int(target_data.get("untraded"))
 
     # Calculate UCR (Unchanged Ratio)
     ucr = None
+    total = calculate_total(target_data)
     if unchanged is not None and total is not None and total > 0:
         ucr = (unchanged / total) * 100
     details["ucr"] = ucr
@@ -598,7 +565,7 @@ def check_entry_conditions(
     bull_reversal = bull_reversal_ratio > BULL_REVERSAL_RATIO_THRESHOLD
 
     # 3. Attack Momentum: up_limit_ratio > 1.5%
-    total = _calculate_total(next_day_stats)
+    total = calculate_total(next_day_stats)
     up_limit_ratio: float | None = (up_limit / total) * 100 if up_limit is not None and total is not None and total > 0 else None
     attack_momentum = up_limit_ratio is not None and up_limit_ratio > UP_LIMIT_RATIO_THRESHOLD
 

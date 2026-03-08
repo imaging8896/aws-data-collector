@@ -20,6 +20,10 @@ resource "aws_lambda_function" "check_panic_signal" {
   timeout          = 120
   architectures    = ["arm64"]
 
+  layers = [
+    aws_lambda_layer_version.panic_common_layer.arn,
+  ]
+
   environment {
     variables = {
       MARKET_DATA_TABLE_NAME       = aws_dynamodb_table.market_data_table.name

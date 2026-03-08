@@ -67,6 +67,8 @@ lambda_notify_discord_function.zip
 lambda_fetch_index_stocks_data_function.zip
 lambda/**/*.ttf
 lambda_check_panic_signal_function.zip
+lambda_check_intraday_panic_function.zip
+lambda_panic_common_layer.zip
 
 # Python cache files
 __pycache__/

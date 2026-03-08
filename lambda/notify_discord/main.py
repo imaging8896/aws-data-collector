@@ -258,6 +258,55 @@ def send_entry_notification(title: str, description: str, entry_details: str, ti
         return False
 
 
+def send_ultimate_exhaustion_notification(title: str, description: str, conditions: str, timestamp: int) -> bool:
+    """
+    Send ultimate exhaustion panic buy notification to Discord.
+
+    Args:
+        title: Notification title
+        description: Notification description
+        conditions: Formatted conditions status
+        timestamp: Unix timestamp of the notification
+    """
+    webhook_url = get_discord_webhook_url()
+    if not webhook_url:
+        print("Discord webhook URL not configured")
+        return False
+
+    try:
+        # Create Discord embed message for ultimate exhaustion signal
+        embed = {
+            "title": title,
+            "description": description,
+            "color": 16711680,  # Red/Orange color for urgent buy signal
+            "fields": [
+                {"name": "📋 觸發條件", "value": conditions, "inline": False},
+                {"name": "⏰ 檢測時間", "value": f"<t:{int(timestamp)}:F>", "inline": True},
+            ],
+            "footer": {"text": "AWS Data Collector - 終極竭盡買入訊號"},
+        }
+
+        payload = {"embeds": [embed]}
+
+        encoded_data = json.dumps(payload).encode("utf-8")
+
+        response = http.request("POST", webhook_url, body=encoded_data, headers={"Content-Type": "application/json"})
+
+        if response.status == 204:
+            print("Successfully sent ultimate exhaustion Discord notification")
+            return True
+        else:
+            print(f"Failed to send ultimate exhaustion Discord notification. Status: {response.status}")
+            return False
+
+    except Exception as e:
+        print(f"Error sending ultimate exhaustion Discord notification: {str(e)}")
+        import traceback
+
+        traceback.print_exc()
+        return False
+
+
 def handler(event, context):
     """
     Lambda handler for Discord notifications
@@ -322,6 +371,20 @@ def handler(event, context):
             return {
                 "statusCode": 200 if success else 500,
                 "body": json.dumps({"message": "Entry notification sent" if success else "Failed to send entry notification"}),
+            }
+
+        # Check if this is an ultimate exhaustion notification
+        if notification_type == "ultimate_exhaustion":
+            title = event.get("title", "🔥 終極竭盡買入訊號")
+            description = event.get("description", "")
+            conditions = event.get("conditions", "")
+            timestamp = event.get("timestamp", 0)
+
+            success = send_ultimate_exhaustion_notification(title, description, conditions, timestamp)
+
+            return {
+                "statusCode": 200 if success else 500,
+                "body": json.dumps({"message": "Ultimate exhaustion notification sent" if success else "Failed to send ultimate exhaustion notification"}),
             }
 
         # Regular trading signal notification
