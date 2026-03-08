@@ -200,3 +200,87 @@ def check_volume_ratio(
 
     exceeds = volume_ratio >= threshold
     return exceeds, details
+
+
+# ============================================================
+# Panic Day Detection
+# ============================================================
+
+
+def is_panic_day(
+    market_data_item: dict[str, Any],
+    market_stats_item: dict[str, Any],
+    past_volumes: list[int | float],
+) -> tuple[bool, dict[str, Any]]:
+    """
+    Check if a given day is a panic day.
+
+    Panic Day Definition:
+    1. Price Panic: Daily drop > 2.5% OR LDR > 3%
+    2. Volume Explosion: Volume >= 1.25x average
+    3. Liquidity Drain: UCR < 1.5%
+
+    Args:
+        market_data_item: Market data for the target day (must have 'close', 'change', 'volume')
+        market_stats_item: Market stats for the target day
+        past_volumes: List of volumes from past days for average calculation
+
+    Returns:
+        Tuple of (is_panic, details)
+    """
+    details: dict[str, Any] = {
+        "price_panic": False,
+        "ldr_panic": False,
+        "volume_explosion": False,
+        "liquidity_drain": False,
+    }
+
+    # Check price panic - calculate daily_change_pct then use shared function
+    close = decimal_to_float(market_data_item.get("close"))
+    change = decimal_to_float(market_data_item.get("change"))
+    daily_change_pct = None
+    if close is not None and change is not None and close != 0:
+        prev_close = close - change
+        if prev_close != 0:
+            daily_change_pct = (change / prev_close) * 100
+
+    price_panic, price_details = check_price_panic_from_change(daily_change_pct)
+    details["price_panic"] = price_panic
+    details["daily_change_pct"] = price_details.get("daily_change_pct")
+
+    # Check LDR panic
+    ldr_panic, ldr_details = check_ldr_panic_from_stats(market_stats_item)
+    details["ldr_panic"] = ldr_panic
+    details["ldr"] = ldr_details.get("ldr")
+
+    # Check volume explosion
+    volume_explosion = False
+    current_volume = decimal_to_int(market_data_item.get("volume"))
+    details["current_volume"] = current_volume
+
+    if current_volume and past_volumes:
+        avg_volume = sum(past_volumes) / len(past_volumes)
+        details["avg_volume"] = avg_volume
+        if avg_volume > 0:
+            volume_ratio = current_volume / avg_volume
+            details["volume_ratio"] = volume_ratio
+            volume_explosion = volume_ratio >= VOLUME_MULTIPLIER
+
+    details["volume_explosion"] = volume_explosion
+
+    # Check liquidity drain (using UCR threshold)
+    unchanged = decimal_to_int(market_stats_item.get("unchanged"))
+    total = calculate_total(market_stats_item)
+    liquidity_drain = False
+    ucr = None
+    if unchanged is not None and total is not None and total > 0:
+        ucr = (unchanged / total) * 100
+        liquidity_drain = ucr < UCR_THRESHOLD
+
+    details["liquidity_drain"] = liquidity_drain
+    details["ucr"] = ucr
+
+    # Panic day requires: (price_panic OR ldr_panic) AND volume_explosion AND liquidity_drain
+    is_panic = (price_panic or ldr_panic) and volume_explosion and liquidity_drain
+
+    return is_panic, details

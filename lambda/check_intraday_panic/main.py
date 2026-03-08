@@ -32,6 +32,7 @@ from panic_common import (
     check_volume_ratio,
     decimal_to_float,
     decimal_to_int,
+    is_panic_day,
 )
 from panic_common import (
     check_unchanged_ratio as common_check_unchanged_ratio,
@@ -51,6 +52,8 @@ market_stats_table = dynamodb.Table(market_stats_table_name) if market_stats_tab
 
 # Constants
 VOLUME_AVG_DAYS = 20  # Average volume calculation period (20 trading days)
+UP_LIMIT_LOOKBACK_DAYS = 10  # Look back 10 days for up_limit max calculation
+BULL_REVERSAL_RATIO_THRESHOLD = 2.0  # 上漲/下跌 > 2
 
 # Taiwan timezone
 TW_TIMEZONE = timezone(timedelta(hours=8))
@@ -110,6 +113,57 @@ def get_historical_market_data(symbol: str, days: int) -> list[dict]:
         return []
 
 
+def get_historical_market_stats(days: int) -> list[dict]:
+    """
+    Get historical market stats data.
+
+    Args:
+        days: Number of days to fetch
+
+    Returns:
+        List of market stats items sorted by date descending
+    """
+    if not market_stats_table:
+        return []
+
+    try:
+        end_date = date.today()
+        start_date = end_date - timedelta(days=days + 10)
+
+        items: list[dict] = []
+        response = market_stats_table.scan(
+            FilterExpression="#d BETWEEN :start AND :end",
+            ExpressionAttributeNames={"#d": "date"},
+            ExpressionAttributeValues={
+                ":start": start_date.isoformat(),
+                ":end": end_date.isoformat(),
+            },
+        )
+        items.extend(response.get("Items", []))
+
+        while "LastEvaluatedKey" in response:
+            response = market_stats_table.scan(
+                FilterExpression="#d BETWEEN :start AND :end",
+                ExpressionAttributeNames={"#d": "date"},
+                ExpressionAttributeValues={
+                    ":start": start_date.isoformat(),
+                    ":end": end_date.isoformat(),
+                },
+                ExclusiveStartKey=response["LastEvaluatedKey"],
+            )
+            items.extend(response.get("Items", []))
+
+        # Sort by date descending and exclude today
+        today_str = date.today().isoformat()
+        items = [item for item in items if item.get("date") != today_str]
+        items = sorted(items, key=lambda x: x["date"], reverse=True)
+
+        return items[:days]
+    except Exception as e:
+        print(f"Error fetching historical market stats: {e}")
+        return []
+
+
 def calculate_average_volume(market_data: list[dict]) -> float | None:
     """
     Calculate average volume from historical data.
@@ -130,6 +184,147 @@ def calculate_average_volume(market_data: list[dict]) -> float | None:
         return None
 
     return float(sum(volumes) / len(volumes))
+
+
+def calculate_max_up_limit(market_stats: list[dict], days: int = UP_LIMIT_LOOKBACK_DAYS) -> int | None:
+    """
+    Calculate max up_limit from historical market stats.
+
+    Args:
+        market_stats: List of market stats items (sorted by date descending)
+        days: Number of days to look back
+
+    Returns:
+        Max up_limit value or None if insufficient data
+    """
+    up_limits = []
+    for item in market_stats[:days]:
+        up_limit = decimal_to_int(item.get("up_limit"))
+        if up_limit is not None:
+            up_limits.append(up_limit)
+
+    if len(up_limits) < 5:  # Require at least 5 days of data
+        return None
+
+    return int(max(up_limits))
+
+
+def check_yesterday_is_panic(
+    market_data: list[dict],
+    market_stats: list[dict],
+) -> tuple[bool, str | None]:
+    """
+    Check if yesterday (the most recent trading day) was a panic day.
+
+    Args:
+        market_data: Historical market data (sorted by date descending)
+        market_stats: Historical market stats (sorted by date descending)
+
+    Returns:
+        Tuple of (is_panic, panic_date)
+    """
+    if not market_data or not market_stats:
+        return False, None
+
+    # Get the most recent trading day (yesterday)
+    yesterday_date = market_data[0].get("date") if market_data else None
+    if not yesterday_date:
+        return False, None
+
+    print(f"Checking if yesterday ({yesterday_date}) was a panic day...")
+
+    # Find yesterday's data
+    yesterday_market_data = None
+    for item in market_data:
+        if item.get("date") == yesterday_date:
+            yesterday_market_data = item
+            break
+
+    yesterday_stats = None
+    for item in market_stats:
+        if item.get("date") == yesterday_date:
+            yesterday_stats = item
+            break
+
+    if not yesterday_market_data or not yesterday_stats:
+        print(f"No data found for yesterday ({yesterday_date})")
+        return False, None
+
+    # Get past volumes for average calculation (exclude yesterday)
+    past_volumes: list[int | float] = []
+    for item in market_data[1:11]:  # Past 10 days
+        vol = decimal_to_int(item.get("volume"))
+        if vol:
+            past_volumes.append(vol)
+
+    # Use shared is_panic_day function
+    is_panic, details = is_panic_day(yesterday_market_data, yesterday_stats, past_volumes)
+
+    print(
+        f"Yesterday panic check - Price: {details.get('price_panic')}, LDR: {details.get('ldr_panic')}, "
+        f"Volume: {details.get('volume_explosion')}, Liquidity: {details.get('liquidity_drain')}"
+    )
+    print(f"Yesterday is panic day: {is_panic}")
+
+    return is_panic, yesterday_date if is_panic else None
+
+
+def check_confirmation_day_signal(
+    market_stats_realtime: dict[str, Any],
+    historical_stats: list[dict],
+) -> dict[str, Any] | None:
+    """
+    Check confirmation day intraday signal conditions.
+
+    Conditions:
+    1. Bull reversal ratio (up/down) > 2
+    2. up_limit > max(up_limit) of past 10 days
+
+    Args:
+        market_stats_realtime: Real-time market statistics
+        historical_stats: Historical market stats for up_limit comparison
+
+    Returns:
+        Signal details dict if conditions met, None otherwise
+    """
+    # Get current values
+    up = decimal_to_int(market_stats_realtime.get("up"))
+    down = decimal_to_int(market_stats_realtime.get("down"))
+    up_limit = decimal_to_int(market_stats_realtime.get("up_limit"))
+
+    if up is None or down is None or up_limit is None:
+        print("Missing required market stats data")
+        return None
+
+    # Calculate bull reversal ratio
+    bull_ratio = float(up / down) if down > 0 else 0.0
+    bull_reversal_met = bull_ratio > BULL_REVERSAL_RATIO_THRESHOLD
+
+    # Calculate max up_limit from past 10 days
+    max_up_limit = calculate_max_up_limit(historical_stats, UP_LIMIT_LOOKBACK_DAYS)
+    up_limit_exceeded = max_up_limit is not None and up_limit > max_up_limit
+
+    print("=== Confirmation Day Signal Check ===")
+    print(f"Bull Ratio: {bull_ratio:.2f} (threshold > {BULL_REVERSAL_RATIO_THRESHOLD}) - {'✅' if bull_reversal_met else '❌'}")
+    print(f"Up Limit: {up_limit} (max 10d: {max_up_limit}) - {'✅' if up_limit_exceeded else '❌'}")
+
+    all_conditions_met = bull_reversal_met and up_limit_exceeded
+
+    if all_conditions_met:
+        print("✅ Confirmation Day Signal TRIGGERED!")
+        return {
+            "signal": True,
+            "details": {
+                "up": up,
+                "down": down,
+                "bull_ratio": bull_ratio,
+                "up_limit": up_limit,
+                "max_up_limit_10d": max_up_limit,
+            },
+        }
+    else:
+        print("❌ Confirmation day conditions not met")
+        return None
 
 
 def fetch_realtime_data() -> tuple[dict[str, Any] | None, dict[str, int] | None]:
@@ -399,14 +594,88 @@ def send_ultimate_exhaustion_notification(signal_data: dict[str, Any]) -> bool:
         return False
 
 
+def send_confirmation_day_notification(
+    signal_data: dict[str, Any],
+    panic_date: str,
+    current_time: str,
+) -> bool:
+    """
+    Send confirmation day signal notification via Discord.
+
+    Args:
+        signal_data: Signal data containing details
+        panic_date: The panic day date (yesterday)
+        current_time: Current time string
+
+    Returns:
+        True if notification sent successfully
+    """
+    if not discord_notify_function_name:
+        print("Discord notify function not configured")
+        return False
+
+    try:
+        timestamp = int(datetime.now(TW_TIMEZONE).timestamp())
+        details = signal_data.get("details", {})
+
+        up = details.get("up", 0)
+        down = details.get("down", 0)
+        bull_ratio = details.get("bull_ratio", 0)
+        up_limit = details.get("up_limit", 0)
+        max_up_limit = details.get("max_up_limit_10d", 0)
+
+        condition_text = (
+            f"✅ 多頭翻轉比: {bull_ratio:.2f} (上漲 {up} / 下跌 {down}, 門檻 > {BULL_REVERSAL_RATIO_THRESHOLD})\n"
+            f"✅ 漲停家數: {up_limit} 家 (10日最高: {max_up_limit} 家)"
+        )
+
+        title = "🚀 確認日偷跑訊號"
+        description = (
+            f"盤中 **{current_time}** 偵測到確認日偷跑訊號！\n昨日恐慌日: **{panic_date}**\n\n市場出現強勁反彈跡象，多頭力道強勁！\n\n💰 **請加碼 70%**"
+        )
+
+        # Invoke Discord notification Lambda
+        payload = {
+            "notification_type": "ultimate_exhaustion",  # Reuse the same notification type
+            "title": title,
+            "description": description,
+            "conditions": condition_text,
+            "timestamp": timestamp,
+        }
+
+        response = lambda_client.invoke(
+            FunctionName=discord_notify_function_name,
+            InvocationType="RequestResponse",
+            Payload=json.dumps(payload),
+        )
+
+        response_payload = json.loads(response["Payload"].read().decode("utf-8"))
+        print(f"Discord confirmation day notification response: {response_payload}")
+
+        status_code = response_payload.get("statusCode")
+        return bool(status_code == 200)
+
+    except Exception as e:
+        print(f"Error sending confirmation day notification: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return False
+
+
 def handler(event: dict, context: Any) -> dict[str, Any]:
     """
-    Lambda handler for checking intraday ultimate exhaustion panic signal.
+    Lambda handler for checking intraday panic signals.
 
     This should be triggered at 13:15 Taiwan time on trading days.
+
+    Checks two types of signals:
+    1. Ultimate Exhaustion: If today is a panic day, check for exhaustion conditions
+    2. Confirmation Day: If yesterday was a panic day, check for reversal conditions
     """
-    print("=== Check Intraday Ultimate Exhaustion Panic Signal ===")
+    print("=== Check Intraday Panic Signals ===")
     now_tw = datetime.now(TW_TIMEZONE)
+    current_time = now_tw.strftime("%H:%M")
     print(f"Current Taiwan time: {now_tw.strftime('%Y-%m-%d %H:%M:%S')}")
 
     # Fetch real-time data
@@ -444,39 +713,66 @@ def handler(event: dict, context: Any) -> dict[str, Any]:
             ),
         }
 
-    # Get historical data for volume average
+    # Get historical data
     print(f"Fetching historical data for past {VOLUME_AVG_DAYS} days...")
     historical_data = get_historical_market_data("TSE01", VOLUME_AVG_DAYS)
+    historical_stats = get_historical_market_stats(UP_LIMIT_LOOKBACK_DAYS)
     avg_volume = calculate_average_volume(historical_data)
     print(f"Average volume ({len(historical_data)} days): {avg_volume}")
+    print(f"Historical stats ({len(historical_stats)} days)")
 
-    # Check for ultimate exhaustion signal
+    result: dict[str, Any] = {
+        "panic_detected": False,
+        "ultimate_exhaustion": False,
+        "confirmation_day_signal": False,
+        "notifications_sent": [],
+    }
+
+    # === Check 1: Ultimate Exhaustion (today is panic day) ===
+    print("\n=== Check 1: Today's Panic Day (Ultimate Exhaustion) ===")
     signal_data = check_ultimate_exhaustion(index_data, market_stats, avg_volume)
 
     if signal_data:
         # Panic day detected - send notification with all condition statuses
         notification_sent = send_ultimate_exhaustion_notification(signal_data)
         all_conditions_met = signal_data.get("all_conditions_met", False)
-        return {
-            "statusCode": 200,
-            "body": json.dumps(
-                {
-                    "panic_detected": True,
-                    "ultimate_exhaustion": all_conditions_met,
-                    "notification_sent": notification_sent,
-                    "signal_data": {
-                        "date": signal_data.get("date"),
-                        "time": signal_data.get("time"),
-                        "details": {k: float(v) if isinstance(v, (Decimal, float)) else v for k, v in signal_data.get("details", {}).items()},
-                    },
-                }
-            ),
+        result["panic_detected"] = True
+        result["ultimate_exhaustion"] = all_conditions_met
+        if notification_sent:
+            result["notifications_sent"].append("ultimate_exhaustion")
+        result["signal_data"] = {
+            "date": signal_data.get("date"),
+            "time": signal_data.get("time"),
+            "details": {k: float(v) if isinstance(v, (Decimal, float)) else v for k, v in signal_data.get("details", {}).items()},
         }
 
-    # No panic day detected
+    # === Check 2: Confirmation Day (yesterday was panic day) ===
+    print("\n=== Check 2: Confirmation Day (Yesterday's Panic) ===")
+    is_yesterday_panic, panic_date = check_yesterday_is_panic(historical_data, historical_stats)
+
+    if is_yesterday_panic and panic_date:
+        print(f"Yesterday ({panic_date}) was a panic day! Checking confirmation day signal...")
+
+        # Check confirmation day conditions
+        confirmation_signal = check_confirmation_day_signal(market_stats, historical_stats)
+
+        if confirmation_signal:
+            notification_sent = send_confirmation_day_notification(
+                confirmation_signal,
+                panic_date,
+                current_time,
+            )
+            result["confirmation_day_signal"] = True
+            result["confirmation_panic_date"] = panic_date
+            if notification_sent:
+                result["notifications_sent"].append("confirmation_day")
+            result["confirmation_details"] = confirmation_signal.get("details", {})
+    else:
+        print("Yesterday was not a panic day, skipping confirmation day check")
+
     return {
         "statusCode": 200,
-        "body": json.dumps({"panic_detected": False, "ultimate_exhaustion": False}),
+        "body": json.dumps(result),
     }
 
 
