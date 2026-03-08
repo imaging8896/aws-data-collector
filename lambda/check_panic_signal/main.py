@@ -1,16 +1,3 @@
-"""
-Check for market panic signals and send Discord notifications.
-
-Panic Day Definition:
-1. Price Panic: Daily drop > 2.5% OR Limit Down Ratio (LDR) > 3%
-   - LDR = down_limit / total
-2. Volume Explosion: Volume >= 1.25 * avg volume (past 10 days)
-3. Liquidity Drain:
-   - unchanged z-score (past 60 days) is extreme OR
-   - Unchanged Ratio (UCR) < 1.5% OR
-   - (Participation Rate > 98.5% AND Down Ratio >= 90%)
-"""
-
 import json
 import os
 from datetime import date, datetime, timedelta, timezone
