@@ -307,6 +307,55 @@ def send_ultimate_exhaustion_notification(title: str, description: str, conditio
         return False
 
 
+def send_super_panic_notification(title: str, description: str, panic_dates: str, timestamp: int) -> bool:
+    """
+    Send super panic alert notification to Discord.
+
+    Args:
+        title: Notification title
+        description: Notification description
+        panic_dates: Formatted panic dates list
+        timestamp: Unix timestamp of the notification
+    """
+    webhook_url = get_discord_webhook_url()
+    if not webhook_url:
+        print("Discord webhook URL not configured")
+        return False
+
+    try:
+        # Create Discord embed message for super panic alert
+        embed = {
+            "title": title,
+            "description": description,
+            "color": 10038562,  # Dark red/maroon for super panic
+            "fields": [
+                {"name": "🔥 恐慌日期", "value": panic_dates, "inline": False},
+                {"name": "⏰ 檢測時間", "value": f"<t:{int(timestamp)}:F>", "inline": True},
+            ],
+            "footer": {"text": "AWS Data Collector - 特強恐慌訊號監測"},
+        }
+
+        payload = {"embeds": [embed]}
+
+        encoded_data = json.dumps(payload).encode("utf-8")
+
+        response = http.request("POST", webhook_url, body=encoded_data, headers={"Content-Type": "application/json"})
+
+        if response.status == 204:
+            print("Successfully sent super panic Discord notification")
+            return True
+        else:
+            print(f"Failed to send super panic Discord notification. Status: {response.status}")
+            return False
+
+    except Exception as e:
+        print(f"Error sending super panic Discord notification: {str(e)}")
+        import traceback
+
+        traceback.print_exc()
+        return False
+
+
 def handler(event, context):
     """
     Lambda handler for Discord notifications
@@ -385,6 +434,20 @@ def handler(event, context):
             return {
                 "statusCode": 200 if success else 500,
                 "body": json.dumps({"message": "Ultimate exhaustion notification sent" if success else "Failed to send ultimate exhaustion notification"}),
+            }
+
+        # Check if this is a super panic notification
+        if notification_type == "super_panic":
+            title = event.get("title", "🔥🔥 特強恐慌警報")
+            description = event.get("description", "")
+            panic_dates = event.get("panic_dates", "")
+            timestamp = event.get("timestamp", 0)
+
+            success = send_super_panic_notification(title, description, panic_dates, timestamp)
+
+            return {
+                "statusCode": 200 if success else 500,
+                "body": json.dumps({"message": "Super panic notification sent" if success else "Failed to send super panic notification"}),
             }
 
         # Regular trading signal notification

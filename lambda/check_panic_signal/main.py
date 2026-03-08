@@ -47,6 +47,7 @@ market_stats_table = dynamodb.Table(market_stats_table_name)  # type: ignore
 LOOKBACK_DAYS = 14  # Check for panic in past 14 days
 VOLUME_AVG_DAYS = 10  # Average volume calculation period
 ZSCORE_LOOKBACK_DAYS = 60  # Z-score calculation period
+SUPER_PANIC_LOOKBACK_DAYS = 5  # Check for super panic in past 5 trading days
 
 # Entry signal thresholds
 BULL_REVERSAL_RATIO_THRESHOLD = 2.0  # 上漲/下跌 > 2
@@ -807,6 +808,141 @@ def send_entry_notification(entry_signals: list[EntrySignal]) -> bool:
         return False
 
 
+def detect_super_panic(
+    panic_signals: list[PanicSignal],
+    market_stats: list[dict],
+) -> tuple[bool, list[PanicSignal]]:
+    """
+    Detect super panic condition.
+
+    Super Panic: Latest day is panic day AND there's another panic day
+    within the previous 5 trading days.
+
+    Args:
+        panic_signals: List of detected panic signals (sorted by date descending)
+        market_stats: List of market stats items (for finding trading days)
+
+    Returns:
+        Tuple of (is_super_panic, recent_panic_signals)
+    """
+    if len(panic_signals) < 2:
+        return False, []
+
+    # Get available trading days from market_stats (sorted descending)
+    trading_days = sorted([item["date"] for item in market_stats], reverse=True)
+
+    if not trading_days:
+        return False, []
+
+    # Check if the latest panic is on the most recent trading day
+    latest_panic = panic_signals[0]
+    latest_panic_date = latest_panic["date"]
+
+    # Find the most recent trading day
+    most_recent_trading_day = trading_days[0]
+
+    if latest_panic_date != most_recent_trading_day:
+        print(f"Latest panic ({latest_panic_date}) is not on most recent trading day ({most_recent_trading_day})")
+        return False, []
+
+    # Find the index of latest panic date in trading days
+    try:
+        latest_idx = trading_days.index(latest_panic_date)
+    except ValueError:
+        return False, []
+
+    # Get the past 5 trading days (excluding the latest panic day)
+    past_5_trading_days = trading_days[latest_idx + 1 : latest_idx + 1 + SUPER_PANIC_LOOKBACK_DAYS]
+
+    print(f"Latest panic date: {latest_panic_date}")
+    print(f"Past {SUPER_PANIC_LOOKBACK_DAYS} trading days: {past_5_trading_days}")
+
+    # Check if any other panic signal is within these 5 trading days
+    recent_panics = [latest_panic]
+    for signal in panic_signals[1:]:
+        if signal["date"] in past_5_trading_days:
+            recent_panics.append(signal)
+            print(f"Found another panic day within 5 trading days: {signal['date']}")
+
+    if len(recent_panics) >= 2:
+        return True, recent_panics
+
+    return False, []
+
+
+def send_super_panic_notification(panic_signals: list[PanicSignal]) -> bool:
+    """
+    Send super panic notification via Discord.
+
+    Args:
+        panic_signals: List of recent panic signals (for super panic)
+
+    Returns:
+        True if notification sent successfully
+    """
+    if not discord_notify_function_name:
+        print("Discord notify function not configured")
+        return False
+
+    if len(panic_signals) < 2:
+        print("Not enough panic signals for super panic notification")
+        return False
+
+    try:
+        timestamp = int(datetime.now(timezone.utc).timestamp())
+
+        # Build notification message
+        panic_dates = []
+        for signal in panic_signals:
+            signal_types = []
+            if signal["price_panic"]:
+                details = signal["details"]
+                if details.get("daily_change_pct") is not None and details["daily_change_pct"] < PRICE_DROP_THRESHOLD:
+                    signal_types.append(f"跌幅 {details['daily_change_pct']:.2f}%")
+                if details.get("ldr") is not None and details["ldr"] > LDR_THRESHOLD:
+                    signal_types.append(f"跌停比 {details['ldr']:.2f}%")
+            if signal["volume_explosion"]:
+                ratio = signal["details"].get("volume_ratio")
+                if ratio:
+                    signal_types.append(f"爆量 {ratio:.2f}x")
+            if signal["liquidity_drain"]:
+                details = signal["details"]
+                if details.get("ucr") is not None and details["ucr"] < UCR_THRESHOLD:
+                    signal_types.append(f"持平比 {details['ucr']:.2f}%")
+
+            signal_text = ", ".join(signal_types) if signal_types else "恐慌訊號"
+            panic_dates.append(f"• **{signal['date']}**: {signal_text}")
+
+        panic_list = "\n".join(panic_dates)
+
+        # Invoke Discord notification Lambda
+        payload = {
+            "notification_type": "super_panic",
+            "title": "🔥🔥 特強恐慌警報",
+            "description": f"⚠️ 最近 {SUPER_PANIC_LOOKBACK_DAYS + 1} 個交易日內出現 {len(panic_signals)} 個恐慌日！\n\n市場恐慌情緒極度濃厚，請密切關注盤中終極竭盡訊號！",
+            "panic_dates": panic_list,
+            "timestamp": timestamp,
+        }
+
+        response = lambda_client.invoke(
+            FunctionName=discord_notify_function_name,
+            InvocationType="RequestResponse",
+            Payload=json.dumps(payload),
+        )
+
+        response_payload = json.loads(response["Payload"].read().decode("utf-8"))
+        print(f"Discord super panic notification response: {response_payload}")
+
+        status_code = response_payload.get("statusCode")
+        return bool(status_code == 200)
+
+    except Exception as e:
+        print(f"Error sending super panic notification: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return False
+
 def handler(event, context):
     """
     Lambda handler for checking panic signals and entry conditions.
@@ -848,10 +984,20 @@ def handler(event, context):
         panic_signals = detect_panic_signals_with_data(check_date, market_data, market_stats)
 
         entry_signals: list[EntrySignal] = []
+        is_super_panic = False
+        super_panic_signals: list[PanicSignal] = []
 
         if panic_signals:
             print(f"Found {len(panic_signals)} panic signals")
             send_panic_notification(panic_signals)
+
+            # Check for super panic (latest day is panic + another panic in past 5 trading days)
+            is_super_panic, super_panic_signals = detect_super_panic(panic_signals, market_stats)
+            if is_super_panic:
+                print(f"🔥🔥 SUPER PANIC detected! {len(super_panic_signals)} panic days in recent period")
+                send_super_panic_notification(super_panic_signals)
+            else:
+                print("No super panic condition detected")
 
             # Check entry conditions for each panic signal
             entry_signals = detect_entry_signals(panic_signals, market_data, market_stats)
@@ -872,6 +1018,8 @@ def handler(event, context):
                     "check_date": check_date.isoformat(),
                     "panic_count": len(panic_signals),
                     "panic_dates": [s["date"] for s in panic_signals],
+                    "is_super_panic": is_super_panic,
+                    "super_panic_dates": [s["date"] for s in super_panic_signals],
                     "entry_count": len(entry_signals),
                     "entry_dates": [s["entry_check_date"] for s in entry_signals],
                 }
