@@ -20,13 +20,13 @@ from typing import TypedDict
 import boto3
 from panic_common import (
     DOWN_RATIO_THRESHOLD,
-    LDR_THRESHOLD,
     PARTICIPATION_RATE_THRESHOLD,
-    PRICE_DROP_THRESHOLD,
-    UCR_THRESHOLD,
     UP_LIMIT_RATIO_THRESHOLD,
     VOLUME_MULTIPLIER,
     calculate_total,
+    check_ldr_panic_from_stats,
+    check_price_panic_from_change,
+    check_unchanged_ratio,
     decimal_to_float,
     decimal_to_int,
 )
@@ -287,28 +287,30 @@ def check_price_panic(market_data: list[dict], market_stats: list[dict], target_
 
     Returns:
         Tuple of (is_panic, details)
+        details includes: daily_change_pct, ldr, has_price_drop, has_high_ldr
     """
     details: dict = {}
 
-    # Check daily drop
+    # Check daily drop using shared function
     daily_change = calculate_daily_change_pct(market_data, target_date)
-    details["daily_change_pct"] = daily_change
+    has_price_drop, price_details = check_price_panic_from_change(daily_change)
+    details["daily_change_pct"] = price_details.get("daily_change_pct")
+    details["has_price_drop"] = has_price_drop  # Record condition result
 
-    has_price_drop = daily_change is not None and daily_change < PRICE_DROP_THRESHOLD
-
-    # Check LDR (Limit Down Ratio)
-    ldr = None
+    # Check LDR (Limit Down Ratio) using shared function
+    target_stats = None
     for item in market_stats:
         if item["date"] == target_date:
-            down_limit = decimal_to_int(item.get("down_limit"))
-            total = calculate_total(item)
-
-            if down_limit is not None and total is not None and total > 0:
-                ldr = (down_limit / total) * 100
+            target_stats = item
             break
 
-    details["ldr"] = ldr
-    has_high_ldr = ldr is not None and ldr > LDR_THRESHOLD
+    has_high_ldr = False
+    if target_stats:
+        has_high_ldr, ldr_details = check_ldr_panic_from_stats(target_stats)
+        details["ldr"] = ldr_details.get("ldr")
+    else:
+        details["ldr"] = None
+    details["has_high_ldr"] = has_high_ldr  # Record condition result
 
     return (has_price_drop or has_high_ldr), details
 
@@ -362,16 +364,13 @@ def check_liquidity_drain(market_stats: list[dict], target_date: str) -> tuple[b
     if target_data is None:
         return False, details
 
-    unchanged = decimal_to_int(target_data.get("unchanged"))
     down = decimal_to_int(target_data.get("down"))
     untraded = decimal_to_int(target_data.get("untraded"))
-
-    # Calculate UCR (Unchanged Ratio)
-    ucr = None
     total = calculate_total(target_data)
-    if unchanged is not None and total is not None and total > 0:
-        ucr = (unchanged / total) * 100
-    details["ucr"] = ucr
+
+    # Check UCR (Unchanged Ratio) using shared function
+    has_low_ucr, ucr_details = check_unchanged_ratio(target_data)
+    details["ucr"] = ucr_details.get("unchanged_ratio")
 
     # Calculate participation rate
     participation_rate = None
@@ -393,10 +392,14 @@ def check_liquidity_drain(market_stats: list[dict], target_date: str) -> tuple[b
     # Check conditions
     # unchanged < avg - 2*std (i.e., current value is below threshold)
     has_extreme_unchanged = current_unchanged is not None and unchanged_threshold is not None and current_unchanged < unchanged_threshold
-    has_low_ucr = ucr is not None and ucr < UCR_THRESHOLD
     has_extreme_participation = (
         participation_rate is not None and down_ratio is not None and participation_rate > PARTICIPATION_RATE_THRESHOLD and down_ratio >= DOWN_RATIO_THRESHOLD
     )
+
+    # Record condition results for notification formatting
+    details["has_extreme_unchanged"] = has_extreme_unchanged
+    details["has_low_ucr"] = has_low_ucr
+    details["has_extreme_participation"] = has_extreme_participation
 
     return (has_extreme_unchanged or has_low_ucr or has_extreme_participation), details
 
@@ -655,30 +658,24 @@ def send_panic_notification(panic_signals: list[PanicSignal]) -> bool:
         panic_dates = []
         for signal in panic_signals:
             signal_types = []
+            details = signal["details"]
             if signal["price_panic"]:
-                details = signal["details"]
-                if details.get("daily_change_pct") is not None and details["daily_change_pct"] < PRICE_DROP_THRESHOLD:
+                # Use pre-computed condition flags instead of re-checking thresholds
+                if details.get("has_price_drop"):
                     signal_types.append(f"跌幅 {details['daily_change_pct']:.2f}%")
-                if details.get("ldr") is not None and details["ldr"] > LDR_THRESHOLD:
+                if details.get("has_high_ldr"):
                     signal_types.append(f"跌停比 {details['ldr']:.2f}%")
             if signal["volume_explosion"]:
-                ratio = signal["details"].get("volume_ratio")
+                ratio = details.get("volume_ratio")
                 if ratio:
                     signal_types.append(f"爆量 {ratio:.2f}x")
             if signal["liquidity_drain"]:
-                details = signal["details"]
-                if details.get("ucr") is not None and details["ucr"] < UCR_THRESHOLD:
+                # Use pre-computed condition flags instead of re-checking thresholds
+                if details.get("has_low_ucr"):
                     signal_types.append(f"持平比 {details['ucr']:.2f}%")
-                unchanged = details.get("unchanged")
-                threshold = details.get("unchanged_threshold")
-                if unchanged is not None and threshold is not None and unchanged < threshold:
-                    signal_types.append(f"持平家數 {unchanged} < {threshold:.0f}")
-                if (
-                    details.get("participation_rate") is not None
-                    and details.get("down_ratio") is not None
-                    and details["participation_rate"] > PARTICIPATION_RATE_THRESHOLD
-                    and details["down_ratio"] >= DOWN_RATIO_THRESHOLD
-                ):
+                if details.get("has_extreme_unchanged"):
+                    signal_types.append(f"持平家數 {details['unchanged']} < {details['unchanged_threshold']:.0f}")
+                if details.get("has_extreme_participation"):
                     signal_types.append(f"參與率 {details['participation_rate']:.1f}% 下跌比 {details['down_ratio']:.1f}%")
 
             signal_text = ", ".join(signal_types) if signal_types else "恐慌訊號"
@@ -895,19 +892,20 @@ def send_super_panic_notification(panic_signals: list[PanicSignal]) -> bool:
         panic_dates = []
         for signal in panic_signals:
             signal_types = []
+            details = signal["details"]
             if signal["price_panic"]:
-                details = signal["details"]
-                if details.get("daily_change_pct") is not None and details["daily_change_pct"] < PRICE_DROP_THRESHOLD:
+                # Use pre-computed condition flags instead of re-checking thresholds
+                if details.get("has_price_drop"):
                     signal_types.append(f"跌幅 {details['daily_change_pct']:.2f}%")
-                if details.get("ldr") is not None and details["ldr"] > LDR_THRESHOLD:
+                if details.get("has_high_ldr"):
                     signal_types.append(f"跌停比 {details['ldr']:.2f}%")
             if signal["volume_explosion"]:
-                ratio = signal["details"].get("volume_ratio")
+                ratio = details.get("volume_ratio")
                 if ratio:
                     signal_types.append(f"爆量 {ratio:.2f}x")
             if signal["liquidity_drain"]:
-                details = signal["details"]
-                if details.get("ucr") is not None and details["ucr"] < UCR_THRESHOLD:
+                # Use pre-computed condition flags instead of re-checking thresholds
+                if details.get("has_low_ucr"):
                     signal_types.append(f"持平比 {details['ucr']:.2f}%")
 
             signal_text = ", ".join(signal_types) if signal_types else "恐慌訊號"
@@ -919,7 +917,9 @@ def send_super_panic_notification(panic_signals: list[PanicSignal]) -> bool:
         payload = {
             "notification_type": "super_panic",
             "title": "🔥🔥 特強恐慌警報",
-            "description": f"⚠️ 最近 {SUPER_PANIC_LOOKBACK_DAYS + 1} 個交易日內出現 {len(panic_signals)} 個恐慌日！\n\n市場恐慌情緒極度濃厚，請密切關注盤中終極竭盡訊號！",
+            "description": (
+                f"⚠️ 最近 {SUPER_PANIC_LOOKBACK_DAYS + 1} 個交易日內出現 {len(panic_signals)} 個恐慌日！\n\n市場恐慌情緒極度濃厚，請密切關注盤中終極竭盡訊號！"
+            ),
             "panic_dates": panic_list,
             "timestamp": timestamp,
         }
@@ -942,6 +942,7 @@ def send_super_panic_notification(panic_signals: list[PanicSignal]) -> bool:
 
         traceback.print_exc()
         return False
+
 
 def handler(event, context):
     """
