@@ -17,7 +17,6 @@ from decimal import Decimal
 from typing import Any
 
 import boto3
-
 from panic_common import (
     LDR_THRESHOLD,
     PRICE_DROP_THRESHOLD,
@@ -453,6 +452,10 @@ def check_ultimate_exhaustion(
         "price_panic": price_panic,
         "low_unchanged": low_unchanged,
         "volume_explosion": volume_explosion,
+        # Include market stats for notification
+        "up": decimal_to_int(market_stats.get("up")),
+        "down": decimal_to_int(market_stats.get("down")),
+        "up_limit": decimal_to_int(market_stats.get("up_limit")),
     }
 
     # Log the check
@@ -522,7 +525,15 @@ def send_ultimate_exhaustion_notification(signal_data: dict[str, Any]) -> bool:
         volume_ratio = details.get("volume_ratio", 0)
         current_price = details.get("current_price", 0)
 
+        # Get market stats for display
+        up = details.get("up", 0)
+        down = details.get("down", 0)
+        unchanged = details.get("unchanged", 0)
+        up_limit = details.get("up_limit", 0)
+        down_limit = details.get("down_limit", 0)
+
         condition_text = (
+            f"📊 盤中上漲 {up} 家 / 下跌 {down} 家 / 持平 {unchanged} 家 (漲停 {up_limit} / 跌停 {down_limit})\n\n"
             f"{price_drop_icon} 跌幅恐慌: {daily_change:.2f}% (門檻 < {PRICE_DROP_THRESHOLD}%)"
             f"{' ← 觸發' if details.get('has_price_drop') else ''}\n"
             f"{ldr_icon} 跌停比: {ldr:.2f}% (門檻 > {LDR_THRESHOLD}%)"
