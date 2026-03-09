@@ -92,7 +92,12 @@ def _parse_stock_distribution(html_content: str) -> dict[str, Any] | None:
         return stats
 
     # If primary patterns didn't work, try alternative parsing strategies
-    return _parse_with_alternative_patterns(html_content) or stats if stats else None
+    alternative_result = _parse_with_alternative_patterns(html_content)
+    if alternative_result:
+        return alternative_result
+
+    # Return partial stats if we found some data, otherwise None
+    return stats if stats else None
 
 
 def _parse_with_alternative_patterns(html_content: str) -> dict[str, Any] | None:
@@ -110,19 +115,23 @@ def _parse_with_alternative_patterns(html_content: str) -> dict[str, Any] | None
     """
     stats: dict[str, Any] = {}
 
+    # Maximum reasonable number of stocks in Taiwan market (including all listed securities)
+    max_stock_count = 5000
+
     # Try to find numbers near Chinese labels in various HTML structures
     # Pattern for: <span>上漲</span><span>634</span> or similar structures
+    # Using \d+ for flexible digit matching, with validation after parsing
     label_value_patterns = [
         # Label followed by number in nearby tag
-        (r"上漲.*?[>\s](\d{2,4})[<\s]", "up"),
-        (r"下跌.*?[>\s](\d{2,4})[<\s]", "down"),
-        (r"持平.*?[>\s](\d{2,4})[<\s]", "unchanged"),
-        (r"漲停.*?[>\s](\d{1,3})[<\s]", "up_limit"),
-        (r"跌停.*?[>\s](\d{1,3})[<\s]", "down_limit"),
+        (r"上漲.*?[>\s](\d+)[<\s]", "up"),
+        (r"下跌.*?[>\s](\d+)[<\s]", "down"),
+        (r"持平.*?[>\s](\d+)[<\s]", "unchanged"),
+        (r"漲停.*?[>\s](\d+)[<\s]", "up_limit"),
+        (r"跌停.*?[>\s](\d+)[<\s]", "down_limit"),
         # Alternative: number before or after label
-        (r"(\d{2,4})[<\s]*.*?上漲", "up"),
-        (r"(\d{2,4})[<\s]*.*?下跌", "down"),
-        (r"(\d{2,4})[<\s]*.*?持平", "unchanged"),
+        (r"(\d+)[<\s]*.*?上漲", "up"),
+        (r"(\d+)[<\s]*.*?下跌", "down"),
+        (r"(\d+)[<\s]*.*?持平", "unchanged"),
     ]
 
     for pattern, field in label_value_patterns:
@@ -131,8 +140,8 @@ def _parse_with_alternative_patterns(html_content: str) -> dict[str, Any] | None
             if match:
                 try:
                     value = int(match.group(1).replace(",", ""))
-                    # Sanity check: typical values are 0-2000
-                    if 0 <= value <= 5000:
+                    # Validate the parsed value is within reasonable bounds
+                    if 0 <= value <= max_stock_count:
                         stats[field] = value
                 except ValueError:
                     continue

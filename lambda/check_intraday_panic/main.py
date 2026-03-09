@@ -637,12 +637,15 @@ def send_confirmation_day_notification(
         # Fetch real-time stock distribution from futures-ai.com
         realtime_stats = _fetch_futures_ai_stats()
         if realtime_stats:
-            futures_ai_up = realtime_stats.get("up", "N/A")
-            futures_ai_down = realtime_stats.get("down", "N/A")
-            futures_ai_unchanged = realtime_stats.get("unchanged", "N/A")
-            condition_text += (
-                f"\n\n📊 即時上漲/下跌/持平家數 (futures-ai):\n🔺 上漲: {futures_ai_up} 家 | 🔻 下跌: {futures_ai_down} 家 | ➖ 持平: {futures_ai_unchanged} 家"
-            )
+            futures_ai_up = realtime_stats.get("up")
+            futures_ai_down = realtime_stats.get("down")
+            futures_ai_unchanged = realtime_stats.get("unchanged")
+            # Only add the section if we have all required data
+            if all(v is not None for v in [futures_ai_up, futures_ai_down, futures_ai_unchanged]):
+                condition_text += (
+                    f"\n\n📊 即時上漲/下跌/持平家數 (futures-ai):\n"
+                    f"🔺 上漲: {futures_ai_up} 家 | 🔻 下跌: {futures_ai_down} 家 | ➖ 持平: {futures_ai_unchanged} 家"
+                )
 
         title = "🚀 確認日偷跑訊號"
         description = (
