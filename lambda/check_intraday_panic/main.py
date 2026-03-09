@@ -17,7 +17,6 @@ from decimal import Decimal
 from typing import Any
 
 import boto3
-
 from panic_common import (
     LDR_THRESHOLD,
     PRICE_DROP_THRESHOLD,
@@ -579,6 +578,27 @@ def send_ultimate_exhaustion_notification(signal_data: dict[str, Any]) -> bool:
         return False
 
 
+def _fetch_futures_ai_stats() -> dict[str, Any] | None:
+    """
+    Fetch real-time stock distribution stats from futures-ai.com.
+
+    Returns:
+        Dictionary with stock stats or None if failed.
+    """
+    try:
+        from futures_ai.market_stats import get_stock_distribution
+
+        stats: dict[str, Any] | None = get_stock_distribution()
+        if stats:
+            print(f"Futures-AI stats: {stats}")
+        else:
+            print("Failed to fetch Futures-AI stats")
+        return stats
+    except Exception as e:
+        print(f"Error fetching Futures-AI stats: {e}")
+        return None
+
+
 def send_confirmation_day_notification(
     signal_data: dict[str, Any],
     panic_date: str,
@@ -613,6 +633,19 @@ def send_confirmation_day_notification(
             f"✅ 多頭翻轉比: {bull_ratio:.2f} (上漲 {up} / 下跌 {down}, 門檻 > {BULL_REVERSAL_RATIO_THRESHOLD})\n"
             f"✅ 漲停家數: {up_limit} 家 (10日最高: {max_up_limit} 家)"
         )
+
+        # Fetch real-time stock distribution from futures-ai.com
+        realtime_stats = _fetch_futures_ai_stats()
+        if realtime_stats:
+            futures_ai_up = realtime_stats.get("up")
+            futures_ai_down = realtime_stats.get("down")
+            futures_ai_unchanged = realtime_stats.get("unchanged")
+            # Only add the section if we have all required data
+            if all(v is not None for v in [futures_ai_up, futures_ai_down, futures_ai_unchanged]):
+                condition_text += (
+                    f"\n\n📊 即時上漲/下跌/持平家數 (futures-ai):\n"
+                    f"🔺 上漲: {futures_ai_up} 家 | 🔻 下跌: {futures_ai_down} 家 | ➖ 持平: {futures_ai_unchanged} 家"
+                )
 
         title = "🚀 確認日偷跑訊號"
         description = (

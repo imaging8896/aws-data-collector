@@ -33,3 +33,26 @@ jobs:
         working-directory: lambda/fetch_market_data
         run: |
           python -m pytest tests/ -v --tb=short
+
+  intraday-panic-tests:
+    name: Intraday Panic Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          pip install curl_cffi pytest
+
+      - name: Run integration tests
+        working-directory: lambda/check_intraday_panic
+        run: |
+          python -m pytest tests/ -v --tb=short

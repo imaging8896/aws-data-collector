@@ -563,10 +563,10 @@ def send_entry_notification(entry_signals: list[EntrySignal]) -> bool:
         # Determine title and description based on conditions met
         if met_conditions_count > 0:
             title = "🟢 恐慌反彈買進訊號"
-            description = f"偵測到 {met_conditions_count}/{len(entry_signals)} 個買進進場訊號，建議今日開盤買進！"
+            description = f"過去 {LOOKBACK_DAYS} 天內偵測到 {met_conditions_count}/{len(entry_signals)} 個符合買入條件的時間點"
         else:
             title = "📊 恐慌日反彈檢查報告"
-            description = f"檢查 {len(entry_signals)} 個恐慌日的反彈狀況，目前無符合進場條件"
+            description = f"過去 {LOOKBACK_DAYS} 天內的 {len(entry_signals)} 個恐慌日，反彈日均不符合進場條件"
 
         # Invoke Discord notification Lambda
         payload = {

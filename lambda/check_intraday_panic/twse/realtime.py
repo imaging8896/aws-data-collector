@@ -80,6 +80,10 @@ def get_realtime_index(index_name: str = "TSE01") -> dict[str, Any] | None:
     if current_price == "-" or not current_price:
         current_price = record.get("y", "0")
 
+    # Note: For index (t00.tw), the real-time API doesn't provide volume ("v" field is missing).
+    # We need to fetch volume from MI_INDEX API separately.
+    volume = _get_market_total_volume()
+
     return {
         "symbol": index_name,
         "date": formatted_date,
@@ -88,9 +92,50 @@ def get_realtime_index(index_name: str = "TSE01") -> dict[str, Any] | None:
         "high": Decimal(str(record.get("h", "0")).replace(",", "")),
         "low": Decimal(str(record.get("l", "0")).replace(",", "")),
         "close": Decimal(str(current_price).replace(",", "")),
-        "volume": int(record.get("v", "0").replace(",", "")) if record.get("v") else 0,
+        "volume": volume,
         "yesterday_close": Decimal(str(record.get("y", "0")).replace(",", "")),
     }
+
+
+def _get_market_total_volume() -> int:
+    """
+    Fetch total market volume from TWSE MI_INDEX API.
+
+    This gets the "成交股數" from "大盤統計資訊" table, "總計" row.
+
+    Returns:
+        Total market volume (成交股數) or 0 if failed.
+    """
+    try:
+        url = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?response=json"
+        response = requests.get(url, impersonate="chrome", timeout=30)
+
+        if response.status_code != 200:
+            print(f"Failed to fetch market volume: status {response.status_code}")
+            return 0
+
+        data = response.json()
+
+        if data.get("stat") != "OK":
+            print(f"MI_INDEX API returned: {data.get('stat')}")
+            return 0
+
+        # Find the table with "大盤統計資訊" in title
+        tables = data.get("tables", [])
+        for table in tables:
+            title = table.get("title", "")
+            if "大盤統計資訊" in title:
+                table_data = table.get("data", [])
+                # Find the "總計" row
+                for row in table_data:
+                    if len(row) >= 3 and "總計" in row[0]:
+                        # Row format: ['總計(1~15)', '成交金額', '成交股數', '成交筆數']
+                        volume_str = row[2].replace(",", "")
+                        return int(volume_str)
+        return 0
+    except Exception as e:
+        print(f"Error fetching market volume: {e}")
+        return 0
 
 
 def get_realtime_market_stats() -> dict[str, Any] | None:
