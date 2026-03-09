@@ -4,150 +4,93 @@ Futures-AI Stock Price Change Distribution API.
 Fetches real-time stock price change statistics (上漲/下跌/持平家數) from futures-ai.com.
 """
 
-import re
 from typing import Any
 
 from curl_cffi import requests
 
-# Futures-AI stock distribution page URL
-FUTURES_AI_URL = "https://www.futures-ai.com/stock-price-change-distribution"
+# Futures-AI market insight API URL
+FUTURES_AI_API_URL = "https://api.market-insight.futures-ai.com/api/monitor/advance_decline"
 
 
-def get_stock_distribution() -> dict[str, Any] | None:
+def get_stock_distribution(category: str = "上市櫃") -> dict[str, Any] | None:
     """
-    Fetch real-time stock price change distribution from futures-ai.com.
+    Fetch real-time stock price change distribution from futures-ai.com API.
+
+    Args:
+        category: Market category to fetch. Default is "上市櫃" (combined TSE+OTC).
+                  Other options: "上市", "上櫃", or industry categories.
 
     Returns:
         Dictionary with stock distribution data or None if failed.
         Example:
         {
-            "up": 634,           # 上漲家數
-            "down": 1160,        # 下跌家數
-            "unchanged": 142,    # 持平家數
-            "up_limit": 69,      # 漲停家數
-            "down_limit": 7,     # 跌停家數
+            "up": 634,              # 上漲家數
+            "down": 1160,           # 下跌家數
+            "unchanged": 142,       # 持平家數
+            "up_limit": 69,         # 漲停家數
+            "down_limit": 7,        # 跌停家數
+            "total": 1931,          # 總家數
+            "avg_change_percent": -1.23,  # 平均漲跌幅
         }
     """
     try:
-        response = requests.get(FUTURES_AI_URL, impersonate="chrome", timeout=30)
+        response = requests.get(FUTURES_AI_API_URL, impersonate="chrome", timeout=30)
 
         if response.status_code != 200:
             print(f"Futures-AI API request failed with status {response.status_code}")
             return None
 
-        html_content = response.text
-        return _parse_stock_distribution(html_content)
+        data = response.json()
+        return _parse_api_response(data, category)
 
     except Exception as e:
         print(f"Error fetching stock distribution from Futures-AI: {e}")
         return None
 
 
-def _parse_stock_distribution(html_content: str) -> dict[str, Any] | None:
+def _parse_api_response(data: list[dict[str, Any]], category: str) -> dict[str, Any] | None:
     """
-    Parse stock distribution data from HTML content.
+    Parse stock distribution data from API response.
+
+    The API returns a list of items, each with:
+    - name: category name (e.g., "上市櫃", "上市", "上櫃", industry names)
+    - count: dict mapping percentage change buckets to stock counts
+      - Keys: "-11" to "11" where 11 = 漲停, -11 = 跌停, 0 = unchanged
+      - Values: number of stocks in that bucket
+    - count_total: total number of stocks
+    - avg_change_percent: average change percentage
 
     Args:
-        html_content: Raw HTML content from the page
+        data: API response data (list of category items)
+        category: Target category name to extract
 
     Returns:
-        Dictionary with parsed statistics or None if parsing fails.
+        Dictionary with parsed statistics or None if category not found.
     """
-    stats: dict[str, Any] = {}
+    for item in data:
+        if item.get("name") == category:
+            count = item.get("count", {})
 
-    # Define patterns to match common HTML structures for stock statistics
-    # Pattern 1: Look for labeled values like "上漲家數：634" or "上漲家數: 634"
-    patterns = {
-        "up": [
-            r"上漲[家數]*[：:\s]*(\d+(?:,\d+)*)",
-            r"漲[：:\s]*(\d+(?:,\d+)*)\s*家",
-        ],
-        "down": [
-            r"下跌[家數]*[：:\s]*(\d+(?:,\d+)*)",
-            r"跌[：:\s]*(\d+(?:,\d+)*)\s*家",
-        ],
-        "unchanged": [
-            r"持平[家數]*[：:\s]*(\d+(?:,\d+)*)",
-            r"平盤[家數]*[：:\s]*(\d+(?:,\d+)*)",
-        ],
-        "up_limit": [
-            r"漲停[家數]*[：:\s]*(\d+(?:,\d+)*)",
-        ],
-        "down_limit": [
-            r"跌停[家數]*[：:\s]*(\d+(?:,\d+)*)",
-        ],
-    }
+            # Calculate stats from count distribution
+            # Positive numbers (1-10) = up, negative (-1 to -10) = down
+            # 11 = 漲停 (up limit), -11 = 跌停 (down limit), 0 = unchanged
+            up = sum(v for k, v in count.items() if 0 < int(k) < 11)
+            down = sum(v for k, v in count.items() if -11 < int(k) < 0)
+            unchanged = count.get("0", 0)
+            up_limit = count.get("11", 0)
+            down_limit = count.get("-11", 0)
+            total = item.get("count_total", 0)
+            avg_change_percent = item.get("avg_change_percent")
 
-    for field, field_patterns in patterns.items():
-        for pattern in field_patterns:
-            match = re.search(pattern, html_content)
-            if match:
-                value_str = match.group(1).replace(",", "")
-                stats[field] = int(value_str)
-                break
+            return {
+                "up": up,
+                "down": down,
+                "unchanged": unchanged,
+                "up_limit": up_limit,
+                "down_limit": down_limit,
+                "total": total,
+                "avg_change_percent": avg_change_percent,
+            }
 
-    # Verify we have the essential fields
-    required_fields = ["up", "down", "unchanged"]
-    if all(field in stats for field in required_fields):
-        return stats
-
-    # If primary patterns didn't work, try alternative parsing strategies
-    alternative_result = _parse_with_alternative_patterns(html_content)
-    if alternative_result:
-        return alternative_result
-
-    # Return partial stats if we found some data, otherwise None
-    return stats if stats else None
-
-
-def _parse_with_alternative_patterns(html_content: str) -> dict[str, Any] | None:
-    """
-    Alternative parsing strategy for different HTML structures.
-
-    This handles cases where the numbers might be in spans, divs, or table cells
-    near their labels.
-
-    Args:
-        html_content: Raw HTML content
-
-    Returns:
-        Dictionary with parsed statistics or None if parsing fails.
-    """
-    stats: dict[str, Any] = {}
-
-    # Maximum reasonable number of stocks in Taiwan market (including all listed securities)
-    max_stock_count = 5000
-
-    # Try to find numbers near Chinese labels in various HTML structures
-    # Pattern for: <span>上漲</span><span>634</span> or similar structures
-    # Using \d+ for flexible digit matching, with validation after parsing
-    label_value_patterns = [
-        # Label followed by number in nearby tag
-        (r"上漲.*?[>\s](\d+)[<\s]", "up"),
-        (r"下跌.*?[>\s](\d+)[<\s]", "down"),
-        (r"持平.*?[>\s](\d+)[<\s]", "unchanged"),
-        (r"漲停.*?[>\s](\d+)[<\s]", "up_limit"),
-        (r"跌停.*?[>\s](\d+)[<\s]", "down_limit"),
-        # Alternative: number before or after label
-        (r"(\d+)[<\s]*.*?上漲", "up"),
-        (r"(\d+)[<\s]*.*?下跌", "down"),
-        (r"(\d+)[<\s]*.*?持平", "unchanged"),
-    ]
-
-    for pattern, field in label_value_patterns:
-        if field not in stats:
-            match = re.search(pattern, html_content, re.DOTALL)
-            if match:
-                try:
-                    value = int(match.group(1).replace(",", ""))
-                    # Validate the parsed value is within reasonable bounds
-                    if 0 <= value <= max_stock_count:
-                        stats[field] = value
-                except ValueError:
-                    continue
-
-    required_fields = ["up", "down", "unchanged"]
-    if all(field in stats for field in required_fields):
-        return stats
-
+    print(f"Category '{category}' not found in API response")
     return None
